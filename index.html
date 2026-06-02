@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ドレミバー v007</title>
+  <title>ドレミバー v008</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -14,7 +14,7 @@
         <h1>ドレミバー</h1>
         <p class="lead">
           鼻歌や歌声の音程を、カラオケの音程バーのように見える化します。
-          v007では、解析した音程バーをドレミ音で再生できるようにし、Web公開しやすい形に整えました。
+          v008では、スマホでの見やすさを改善し、ドレミ音の再生音量を上げました。
         </p>
       </div>
     </header>
@@ -155,6 +155,16 @@
 
         <button id="saveImageButton" class="save-image" disabled>音程バーを画像保存</button>
 
+        <div class="segment-flow">
+          <div class="segment-flow-head">
+            <h3>音の流れ</h3>
+            <p>スマホで見にくい時は、ここでドレミの並びを確認できます。</p>
+          </div>
+          <div id="segmentList" class="segment-list">
+            解析後に、音の流れがここに表示されます。
+          </div>
+        </div>
+
         <div id="selectedInfo" class="selected-info">
           バーをクリックすると、音名と時間が表示されます。
         </div>
@@ -169,6 +179,7 @@
           <li>音名表示は、最初は「やさしい（ドレミだけ）」がおすすめです。</li>
           <li>結果は画像として保存できます。練習メモや共有用に使えます。</li>
           <li>解析したバーは、ドレミ音として再生できます。</li>
+          <li>スマホでは、音程バーの下にある「音の流れ」も見ると確認しやすいです。</li>
           <li>伴奏入り音源や複数の音が同時に鳴る音源は、正確に読めないことがあります。</li>
           <li>歌声は自然に揺れるため、細かいズレは気にしすぎなくて大丈夫です。</li>
           <li>「固定ド」表示なので、C=ド、D=レ、E=ミとして表示します。</li>

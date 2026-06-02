@@ -391,6 +391,68 @@ button.save-image:not(:disabled):hover {
   background: #fff0dc;
 }
 
+
+.segment-flow {
+  margin-top: 12px;
+  padding: 13px;
+  border: 1px solid #f0dbc4;
+  border-radius: 16px;
+  background: #fffaf4;
+}
+
+.segment-flow-head {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.segment-flow-head h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.segment-flow-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.segment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.segment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid #ead8c4;
+  color: #6f5037;
+  font-weight: 700;
+}
+
+.segment-chip strong {
+  color: var(--accent-dark);
+  font-size: 15px;
+}
+
+.mobile-tip {
+  display: none;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .selected-info {
   margin-top: 12px;
   padding: 12px 14px;
@@ -418,6 +480,24 @@ button.save-image:not(:disabled):hover {
   .panel {
     border-radius: 20px;
     padding: 18px;
+  }
+
+  .canvas-wrap {
+    border-radius: 14px;
+  }
+
+  .segment-flow {
+    padding: 12px;
+  }
+
+  .segment-list {
+    gap: 7px;
+  }
+
+  .segment-chip {
+    min-height: 36px;
+    padding: 8px 10px;
+    font-size: 13px;
   }
 
   .input-grid,

@@ -16,6 +16,7 @@ const noteDisplayMode = document.getElementById("noteDisplayMode");
 const saveImageButton = document.getElementById("saveImageButton");
 const playSynthButton = document.getElementById("playSynthButton");
 const stopSynthButton = document.getElementById("stopSynthButton");
+const segmentList = document.getElementById("segmentList");
 
 const recordStartButton = document.getElementById("recordStartButton");
 const recordStopButton = document.getElementById("recordStopButton");
@@ -45,6 +46,9 @@ let recordingStartAt = 0;
 let recordingTimerId = null;
 
 const NOTE_NAMES = ["ド", "ド#", "レ", "レ#", "ミ", "ファ", "ファ#", "ソ", "ソ#", "ラ", "ラ#", "シ"];
+const MOBILE_BREAKPOINT = 760;
+const SYNTH_NOTE_GAIN = 0.34;
+const SYNTH_MASTER_GAIN = 0.98;
 
 fileInput.addEventListener("change", async (event) => {
   const file = event.target.files?.[0];
@@ -81,13 +85,15 @@ analyzeButton.addEventListener("click", async () => {
     if (segments.length === 0) {
       statusEl.textContent = "音程を検出できませんでした。声を少し大きめにした音源や、雑音の少ない音源で試してください。";
       summaryEl.textContent = "検出できた音程バーはありません。";
+      renderSegmentList();
       clearCanvas();
       updateResultButtons();
       return;
     }
 
-    statusEl.textContent = "解析が完了しました。";
+    statusEl.textContent = "解析が完了しました。スマホでは下の「音の流れ」も確認できます。";
     updateSummary(result);
+    renderSegmentList();
     drawPitchBars();
   } catch (error) {
     console.error(error);
@@ -148,6 +154,7 @@ noteDisplayMode.addEventListener("change", () => {
     updateSummary({
       segments,
     });
+    renderSegmentList();
     drawPitchBars();
   }
 });
@@ -383,6 +390,7 @@ function resetResult() {
   selectedSegment = null;
   summaryEl.textContent = "解析結果はここに表示されます。";
   selectedInfo.textContent = "バーをクリックすると、音名と時間が表示されます。";
+  if (segmentList) segmentList.textContent = "解析後に、音の流れがここに表示されます。";
   updateResultButtons();
   clearCanvas();
 }
@@ -707,13 +715,15 @@ function drawPitchBars() {
     rows.push(midi);
   }
 
+  const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
   const dpr = window.devicePixelRatio || 1;
-  const left = 68;
-  const right = 24;
-  const top = 26;
-  const bottom = 34;
-  const rowHeight = 30;
-  const pxPerSec = Number(zoomSelect.value || 95);
+  const left = isMobile ? 56 : 68;
+  const right = isMobile ? 16 : 24;
+  const top = isMobile ? 30 : 26;
+  const bottom = isMobile ? 40 : 34;
+  const rowHeight = isMobile ? 34 : 30;
+  const selectedPxPerSec = Number(zoomSelect.value || 95);
+  const pxPerSec = isMobile ? Math.min(selectedPxPerSec, 72) : selectedPxPerSec;
   const chartWidth = Math.max(canvas.parentElement.clientWidth - left - right, duration * pxPerSec);
   const width = Math.ceil(left + chartWidth + right);
   const height = Math.ceil(top + rows.length * rowHeight + bottom);
@@ -739,6 +749,7 @@ function drawPitchBars() {
     width,
     height,
     pxPerSec,
+    isMobile,
   };
 
   renderCanvas();
@@ -759,7 +770,7 @@ function renderCanvas() {
 }
 
 function drawGrid(s) {
-  ctx.font = "13px sans-serif";
+  ctx.font = s.isMobile ? "14px sans-serif" : "13px sans-serif";
   ctx.textBaseline = "middle";
 
   s.rows.forEach((midi, index) => {
@@ -802,9 +813,37 @@ function drawGrid(s) {
     }
   }
 
+  if (s.isMobile) {
+    drawRepeatedMobileNoteLabels(s);
+  }
+
   ctx.strokeStyle = "#d3b89e";
   ctx.lineWidth = 1.5;
   ctx.strokeRect(s.left, s.top, s.chartWidth, s.rows.length * s.rowHeight);
+}
+
+function drawRepeatedMobileNoteLabels(s) {
+  const repeatEverySec = 4;
+  const repeatCount = Math.ceil(s.duration / repeatEverySec);
+
+  ctx.font = "11px sans-serif";
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+
+  for (let r = 1; r <= repeatCount; r++) {
+    const x = s.left + r * repeatEverySec * s.pxPerSec + 4;
+    if (x > s.width - s.right - 24) continue;
+
+    s.rows.forEach((midi, index) => {
+      const label = displayNoteName(midi);
+      const isNatural = !midiToNoteName(midi).includes("#");
+      if (!isNatural) return;
+
+      const y = s.top + index * s.rowHeight + s.rowHeight / 2;
+      ctx.fillStyle = "rgba(122, 87, 64, 0.38)";
+      ctx.fillText(label, x, y);
+    });
+  }
 }
 
 function drawBars(s) {
@@ -824,7 +863,7 @@ function drawBars(s) {
 
     if (w > 34) {
       ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
-      ctx.font = "12px sans-serif";
+      ctx.font = s.isMobile ? "13px sans-serif" : "12px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(displayNoteName(seg.midi).replace(/\d/g, ""), x + w / 2, y + h / 2);
@@ -897,6 +936,61 @@ function stopPlayhead() {
   renderCanvas();
 }
 
+function renderSegmentList() {
+  if (!segmentList) return;
+
+  if (!segments.length) {
+    segmentList.textContent = "解析後に、音の流れがここに表示されます。";
+    return;
+  }
+
+  const maxVisible = 60;
+  const visibleSegments = segments.slice(0, maxVisible);
+  const html = visibleSegments.map((seg, index) => {
+    const note = escapeHtml(displayNoteName(seg.midi));
+    const time = `${formatTime(seg.start)}〜${formatTime(seg.end)}`;
+    return `<button class="segment-chip" type="button" data-index="${index}"><strong>${note}</strong><span>${time}</span></button>`;
+  }).join("");
+
+  const extra = segments.length > maxVisible
+    ? `<span class="segment-chip">+${segments.length - maxVisible}個</span>`
+    : "";
+
+  segmentList.innerHTML = html + extra;
+
+  segmentList.querySelectorAll(".segment-chip[data-index]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const seg = segments[Number(chip.dataset.index)];
+      if (!seg) return;
+
+      stopSynthPlayback({ silent: true });
+      audioEl.currentTime = Math.max(0, seg.start);
+      selectedSegment = seg;
+      selectedInfo.innerHTML = `
+        <strong>${displayNoteName(seg.midi)}</strong>
+        ／ ${formatTime(seg.start)} 〜 ${formatTime(seg.end)}
+        ／ 約${seg.freq.toFixed(1)}Hz
+      `;
+      drawPitchBars();
+
+      if (audioEl.src) {
+        audioEl.play().catch(() => {
+          statusEl.textContent = "音源の再生はブラウザ側で許可が必要な場合があります。";
+        });
+      }
+    });
+  });
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function updateResultButtons() {
   const hasResult = segments.length > 0;
 
@@ -929,7 +1023,7 @@ async function playSynthFromBars() {
     synthNodes = [];
 
     const masterGain = audioContext.createGain();
-    masterGain.gain.setValueAtTime(0.82, startAt);
+    masterGain.gain.setValueAtTime(SYNTH_MASTER_GAIN, startAt);
     masterGain.connect(audioContext.destination);
     synthNodes.push(masterGain);
 
@@ -947,8 +1041,8 @@ async function playSynthFromBars() {
       osc.frequency.setValueAtTime(midiToFrequency(seg.midi), start);
 
       gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(0.16, start + 0.015);
-      gain.gain.setValueAtTime(0.16, Math.max(start + 0.02, end - 0.035));
+      gain.gain.linearRampToValueAtTime(SYNTH_NOTE_GAIN, start + 0.015);
+      gain.gain.setValueAtTime(SYNTH_NOTE_GAIN, Math.max(start + 0.02, end - 0.035));
       gain.gain.linearRampToValueAtTime(0, end);
 
       osc.connect(gain);
