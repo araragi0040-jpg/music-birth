@@ -1,7 +1,7 @@
 {
   "name": "doremi-bar",
-  "version": "0.8.0",
-  "description": "鼻歌・歌声の単音をカラオケ風の音程バーで可視化し、ドレミ音で再生できるブラウザアプリ",
+  "version": "0.9.0",
+  "description": "鼻歌・歌声の単音をカラオケ風の音程バーで可視化し、聞きやすいドレミ音で再生できるブラウザアプリ",
   "type": "module",
   "private": true
 }

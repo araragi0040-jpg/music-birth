@@ -17,6 +17,8 @@ const saveImageButton = document.getElementById("saveImageButton");
 const playSynthButton = document.getElementById("playSynthButton");
 const stopSynthButton = document.getElementById("stopSynthButton");
 const segmentList = document.getElementById("segmentList");
+const chartDisplayMode = document.getElementById("chartDisplayMode");
+const synthVolume = document.getElementById("synthVolume");
 
 const recordStartButton = document.getElementById("recordStartButton");
 const recordStopButton = document.getElementById("recordStopButton");
@@ -47,8 +49,8 @@ let recordingTimerId = null;
 
 const NOTE_NAMES = ["ド", "ド#", "レ", "レ#", "ミ", "ファ", "ファ#", "ソ", "ソ#", "ラ", "ラ#", "シ"];
 const MOBILE_BREAKPOINT = 760;
-const SYNTH_NOTE_GAIN = 0.34;
-const SYNTH_MASTER_GAIN = 0.98;
+const SYNTH_FUNDAMENTAL_GAIN = 0.34;
+const SYNTH_HARMONIC_GAIN = 0.16;
 
 fileInput.addEventListener("change", async (event) => {
   const file = event.target.files?.[0];
@@ -156,6 +158,14 @@ noteDisplayMode.addEventListener("change", () => {
     });
     renderSegmentList();
     drawPitchBars();
+  }
+});
+
+chartDisplayMode.addEventListener("change", () => {
+  if (segments.length > 0) {
+    drawPitchBars();
+    const modeText = chartDisplayMode.value === "fit" ? "全体表示" : "横スクロール表示";
+    statusEl.textContent = `音程バーを${modeText}に切り替えました。`;
   }
 });
 
@@ -716,6 +726,7 @@ function drawPitchBars() {
   }
 
   const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
+  const isFitMode = chartDisplayMode.value === "fit";
   const dpr = window.devicePixelRatio || 1;
   const left = isMobile ? 56 : 68;
   const right = isMobile ? 16 : 24;
@@ -723,8 +734,13 @@ function drawPitchBars() {
   const bottom = isMobile ? 40 : 34;
   const rowHeight = isMobile ? 34 : 30;
   const selectedPxPerSec = Number(zoomSelect.value || 95);
-  const pxPerSec = isMobile ? Math.min(selectedPxPerSec, 72) : selectedPxPerSec;
-  const chartWidth = Math.max(canvas.parentElement.clientWidth - left - right, duration * pxPerSec);
+  const availableWidth = Math.max(240, canvas.parentElement.clientWidth - left - right);
+  const pxPerSec = isFitMode
+    ? Math.max(8, availableWidth / Math.max(duration, 1))
+    : selectedPxPerSec;
+  const chartWidth = isFitMode
+    ? availableWidth
+    : Math.max(availableWidth, duration * pxPerSec);
   const width = Math.ceil(left + chartWidth + right);
   const height = Math.ceil(top + rows.length * rowHeight + bottom);
 
@@ -750,6 +766,7 @@ function drawPitchBars() {
     height,
     pxPerSec,
     isMobile,
+    isFitMode,
   };
 
   renderCanvas();
@@ -793,11 +810,15 @@ function drawGrid(s) {
   });
 
   const seconds = Math.ceil(s.duration);
+  const timeStep = s.isFitMode
+    ? Math.max(1, Math.ceil(s.duration / 6))
+    : 1;
+
   ctx.font = "12px sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
 
-  for (let sec = 0; sec <= seconds; sec++) {
+  for (let sec = 0; sec <= seconds; sec += timeStep) {
     const x = s.left + sec * s.pxPerSec;
 
     ctx.strokeStyle = sec % 5 === 0 ? "#dcc5ad" : "#f1e4d6";
@@ -807,13 +828,11 @@ function drawGrid(s) {
     ctx.lineTo(x, s.height - s.bottom);
     ctx.stroke();
 
-    if (sec % 2 === 0) {
-      ctx.fillStyle = "#9b7c61";
-      ctx.fillText(`${sec}s`, x, s.height - s.bottom + 8);
-    }
+    ctx.fillStyle = "#9b7c61";
+    ctx.fillText(`${sec}s`, x, s.height - s.bottom + 8);
   }
 
-  if (s.isMobile) {
+  if (s.isMobile && !s.isFitMode) {
     drawRepeatedMobileNoteLabels(s);
   }
 
@@ -861,7 +880,7 @@ function drawBars(s) {
     roundedRect(ctx, x, y, w, h, 7);
     ctx.fill();
 
-    if (w > 34) {
+    if (w > (s.isFitMode ? 42 : 34)) {
       ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
       ctx.font = s.isMobile ? "13px sans-serif" : "12px sans-serif";
       ctx.textAlign = "center";
@@ -1022,10 +1041,21 @@ async function playSynthFromBars() {
     isSynthPlaying = true;
     synthNodes = [];
 
+    const volumeMultiplier = Number(synthVolume?.value || 3.4);
+
     const masterGain = audioContext.createGain();
-    masterGain.gain.setValueAtTime(SYNTH_MASTER_GAIN, startAt);
-    masterGain.connect(audioContext.destination);
-    synthNodes.push(masterGain);
+    const compressor = audioContext.createDynamicsCompressor();
+
+    compressor.threshold.setValueAtTime(-14, startAt);
+    compressor.knee.setValueAtTime(16, startAt);
+    compressor.ratio.setValueAtTime(8, startAt);
+    compressor.attack.setValueAtTime(0.004, startAt);
+    compressor.release.setValueAtTime(0.18, startAt);
+
+    masterGain.gain.setValueAtTime(volumeMultiplier, startAt);
+    masterGain.connect(compressor);
+    compressor.connect(audioContext.destination);
+    synthNodes.push(masterGain, compressor);
 
     for (const seg of segments) {
       const start = startAt + Math.max(0, seg.start);
@@ -1034,29 +1064,45 @@ async function playSynthFromBars() {
 
       if (duration <= 0.03) continue;
 
-      const osc = audioContext.createOscillator();
-      const gain = audioContext.createGain();
+      const frequency = midiToFrequency(seg.midi);
 
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(midiToFrequency(seg.midi), start);
+      const osc = audioContext.createOscillator();
+      const harmonicOsc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      const harmonicGain = audioContext.createGain();
+
+      // スマホスピーカーでも聞こえやすいように、正弦波より明るい三角波＋小さな倍音を足します。
+      osc.type = "triangle";
+      harmonicOsc.type = "sine";
+      osc.frequency.setValueAtTime(frequency, start);
+      harmonicOsc.frequency.setValueAtTime(frequency * 2, start);
 
       gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(SYNTH_NOTE_GAIN, start + 0.015);
-      gain.gain.setValueAtTime(SYNTH_NOTE_GAIN, Math.max(start + 0.02, end - 0.035));
+      gain.gain.linearRampToValueAtTime(SYNTH_FUNDAMENTAL_GAIN, start + 0.015);
+      gain.gain.setValueAtTime(SYNTH_FUNDAMENTAL_GAIN, Math.max(start + 0.02, end - 0.035));
       gain.gain.linearRampToValueAtTime(0, end);
 
+      harmonicGain.gain.setValueAtTime(0, start);
+      harmonicGain.gain.linearRampToValueAtTime(SYNTH_HARMONIC_GAIN, start + 0.015);
+      harmonicGain.gain.setValueAtTime(SYNTH_HARMONIC_GAIN, Math.max(start + 0.02, end - 0.035));
+      harmonicGain.gain.linearRampToValueAtTime(0, end);
+
       osc.connect(gain);
+      harmonicOsc.connect(harmonicGain);
       gain.connect(masterGain);
+      harmonicGain.connect(masterGain);
 
       osc.start(start);
+      harmonicOsc.start(start);
       osc.stop(end + 0.04);
+      harmonicOsc.stop(end + 0.04);
 
-      synthNodes.push(osc, gain);
+      synthNodes.push(osc, harmonicOsc, gain, harmonicGain);
     }
 
     updateResultButtons();
-    statusEl.textContent = "解析したバーをドレミ音で再生中です。";
-    selectedInfo.textContent = "ドレミ音で再生中です。元の声と聞き比べると、音の動きが確認しやすくなります。";
+    statusEl.textContent = "解析したバーをドレミ音で再生中です。音が大きすぎる場合はドレミ音量を下げてください。";
+    selectedInfo.textContent = "ドレミ音で再生中です。スマホでも聞こえやすいよう、明るい音色で鳴らしています。";
     startPlayhead();
 
     const finishAfterMs = Math.max(100, (synthDuration + 0.22) * 1000);

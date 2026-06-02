@@ -226,7 +226,7 @@ button.primary {
 
 .simple-setting {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin: 16px 0 10px;
   padding: 14px;
@@ -392,6 +392,32 @@ button.save-image:not(:disabled):hover {
 }
 
 
+
+.sound-setting {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 12px 13px;
+  border: 1px solid #f0dbc4;
+  border-radius: 16px;
+  background: #fff7ec;
+}
+
+.sound-setting label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.sound-setting p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .segment-flow {
   margin-top: 12px;
   padding: 13px;
@@ -486,7 +512,33 @@ button.save-image:not(:disabled):hover {
     border-radius: 14px;
   }
 
-  .segment-flow {
+  
+.sound-setting {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 12px 13px;
+  border: 1px solid #f0dbc4;
+  border-radius: 16px;
+  background: #fff7ec;
+}
+
+.sound-setting label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.sound-setting p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.segment-flow {
     padding: 12px;
   }
 

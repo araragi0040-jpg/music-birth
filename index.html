@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ドレミバー v008</title>
+  <title>ドレミバー v009</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -14,7 +14,7 @@
         <h1>ドレミバー</h1>
         <p class="lead">
           鼻歌や歌声の音程を、カラオケの音程バーのように見える化します。
-          v008では、スマホでの見やすさを改善し、ドレミ音の再生音量を上げました。
+          v009では、音程バーの横スクロール／全体表示切替と、スマホでも聞こえやすいドレミ音再生に調整しました。
         </p>
       </div>
     </header>
@@ -78,8 +78,16 @@
             </select>
           </label>
 
+          <label>
+            音程バー表示
+            <select id="chartDisplayMode">
+              <option value="scroll" selected>横スクロール（おすすめ）</option>
+              <option value="fit">全体表示</option>
+            </select>
+          </label>
+
           <p>
-            基本は「おまかせ」＋「やさしい表示」でOKです。細かく拾いすぎると、声の揺れや雑音まで拾ってバーが細切れになることがあります。
+            基本は「おまかせ」＋「やさしい表示」＋「横スクロール」でOKです。全体表示は、曲全体の流れをざっくり見たい時に使えます。
           </p>
         </div>
 
@@ -153,6 +161,18 @@
           <button id="stopSynthButton" class="secondary" disabled>再生停止</button>
         </div>
 
+        <div class="sound-setting">
+          <label>
+            ドレミ音量
+            <select id="synthVolume">
+              <option value="1.4">標準</option>
+              <option value="2.4">大きめ</option>
+              <option value="3.4" selected>最大（スマホ向け）</option>
+            </select>
+          </label>
+          <p>スマホスピーカーでも聞こえやすいよう、明るい音色と倍音を足して再生します。</p>
+        </div>
+
         <button id="saveImageButton" class="save-image" disabled>音程バーを画像保存</button>
 
         <div class="segment-flow">
@@ -179,6 +199,8 @@
           <li>音名表示は、最初は「やさしい（ドレミだけ）」がおすすめです。</li>
           <li>結果は画像として保存できます。練習メモや共有用に使えます。</li>
           <li>解析したバーは、ドレミ音として再生できます。</li>
+          <li>音程バーは、基本は横スクロールで見るのがおすすめです。</li>
+          <li>全体をざっくり見たい時は「音程バー表示：全体表示」に切り替えられます。</li>
           <li>スマホでは、音程バーの下にある「音の流れ」も見ると確認しやすいです。</li>
           <li>伴奏入り音源や複数の音が同時に鳴る音源は、正確に読めないことがあります。</li>
           <li>歌声は自然に揺れるため、細かいズレは気にしすぎなくて大丈夫です。</li>
