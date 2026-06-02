@@ -1,0 +1,7 @@
+{
+  "name": "doremi-bar",
+  "version": "0.7.0",
+  "description": "鼻歌・歌声の単音をカラオケ風の音程バーで可視化するブラウザアプリ",
+  "type": "module",
+  "private": true
+}

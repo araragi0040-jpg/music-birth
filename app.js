@@ -1,0 +1,1124 @@
+const fileInput = document.getElementById("fileInput");
+const fileLabel = document.getElementById("fileLabel");
+const analyzeButton = document.getElementById("analyzeButton");
+const statusEl = document.getElementById("status");
+const audioEl = document.getElementById("audio");
+const canvas = document.getElementById("pitchCanvas");
+const ctx = canvas.getContext("2d");
+const summaryEl = document.getElementById("summary");
+const selectedInfo = document.getElementById("selectedInfo");
+
+const detailSelect = document.getElementById("detailSelect");
+const sensitivitySelect = document.getElementById("sensitivitySelect");
+const zoomSelect = document.getElementById("zoomSelect");
+const analysisPreset = document.getElementById("analysisPreset");
+const noteDisplayMode = document.getElementById("noteDisplayMode");
+const saveImageButton = document.getElementById("saveImageButton");
+const playSynthButton = document.getElementById("playSynthButton");
+const stopSynthButton = document.getElementById("stopSynthButton");
+
+const recordStartButton = document.getElementById("recordStartButton");
+const recordStopButton = document.getElementById("recordStopButton");
+const recordStatus = document.getElementById("recordStatus");
+const recordTimer = document.getElementById("recordTimer");
+const recordDot = document.getElementById("recordDot");
+
+let audioContext = null;
+let audioBuffer = null;
+let audioObjectUrl = null;
+let frames = [];
+let segments = [];
+let drawState = null;
+let selectedSegment = null;
+let rafId = null;
+
+let synthNodes = [];
+let synthEndTimer = null;
+let synthStartAudioTime = null;
+let synthDuration = 0;
+let isSynthPlaying = false;
+
+let mediaRecorder = null;
+let recordedChunks = [];
+let recordingStream = null;
+let recordingStartAt = 0;
+let recordingTimerId = null;
+
+const NOTE_NAMES = ["ド", "ド#", "レ", "レ#", "ミ", "ファ", "ファ#", "ソ", "ソ#", "ラ", "ラ#", "シ"];
+
+fileInput.addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  resetResult();
+  await loadAudioBlob(file, {
+    label: file.name,
+    sourceLabel: "ファイル音源",
+    status: "音源を読み込み中です。",
+  });
+});
+
+recordStartButton.addEventListener("click", startRecording);
+recordStopButton.addEventListener("click", stopRecording);
+
+analyzeButton.addEventListener("click", async () => {
+  if (!audioBuffer) return;
+
+  stopSynthPlayback({ silent: true });
+  analyzeButton.disabled = true;
+  selectedSegment = null;
+  statusEl.textContent = "解析を開始します。";
+
+  try {
+    const result = await analyzePitch(audioBuffer, {
+      detail: detailSelect.value,
+      sensitivity: sensitivitySelect.value,
+    });
+
+    frames = result.frames;
+    segments = result.segments;
+
+    if (segments.length === 0) {
+      statusEl.textContent = "音程を検出できませんでした。声を少し大きめにした音源や、雑音の少ない音源で試してください。";
+      summaryEl.textContent = "検出できた音程バーはありません。";
+      clearCanvas();
+      updateResultButtons();
+      return;
+    }
+
+    statusEl.textContent = "解析が完了しました。";
+    updateSummary(result);
+    drawPitchBars();
+  } catch (error) {
+    console.error(error);
+    statusEl.textContent = "解析中にエラーが起きました。短めの音源で再度試してください。";
+  } finally {
+    analyzeButton.disabled = false;
+  }
+});
+
+audioEl.addEventListener("play", () => {
+  stopSynthPlayback({ silent: true });
+  startPlayhead();
+});
+audioEl.addEventListener("pause", stopPlayhead);
+audioEl.addEventListener("ended", stopPlayhead);
+
+canvas.addEventListener("click", (event) => {
+  if (!drawState || segments.length === 0) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const x = (event.clientX - rect.left) * (canvas.width / rect.width);
+  const y = (event.clientY - rect.top) * (canvas.height / rect.height);
+
+  const seg = hitTestSegment(x, y);
+  if (!seg) return;
+
+  stopSynthPlayback({ silent: true });
+  selectedSegment = seg;
+  audioEl.currentTime = Math.max(0, seg.start);
+  selectedInfo.innerHTML = `
+    <strong>${displayNoteName(seg.midi)}</strong>
+    ／ ${formatTime(seg.start)} 〜 ${formatTime(seg.end)}
+    ／ 約${seg.freq.toFixed(1)}Hz
+  `;
+  drawPitchBars();
+});
+
+window.addEventListener("resize", () => {
+  if (segments.length > 0) drawPitchBars();
+});
+
+
+analysisPreset.addEventListener("change", () => {
+  applyAnalysisPreset(analysisPreset.value);
+});
+
+detailSelect.addEventListener("change", markCustomPreset);
+sensitivitySelect.addEventListener("change", markCustomPreset);
+zoomSelect.addEventListener("change", () => {
+  markCustomPreset();
+  if (segments.length > 0) drawPitchBars();
+});
+
+applyAnalysisPreset("auto");
+
+noteDisplayMode.addEventListener("change", () => {
+  if (segments.length > 0) {
+    updateSummary({
+      segments,
+    });
+    drawPitchBars();
+  }
+});
+
+saveImageButton.addEventListener("click", savePitchImage);
+playSynthButton.addEventListener("click", playSynthFromBars);
+stopSynthButton.addEventListener("click", () => stopSynthPlayback());
+
+
+
+function applyAnalysisPreset(value) {
+  const presets = {
+    auto: {
+      detail: "normal",
+      sensitivity: "normal",
+      zoom: "95",
+      message: "おまかせ：通常の鼻歌・歌声向けです。",
+    },
+    smallVoice: {
+      detail: "normal",
+      sensitivity: "high",
+      zoom: "95",
+      message: "声が小さいとき：小さめの声も拾いやすくします。",
+    },
+    noisy: {
+      detail: "normal",
+      sensitivity: "low",
+      zoom: "95",
+      message: "雑音が多いとき：小さい雑音を拾いにくくします。",
+    },
+    smooth: {
+      detail: "rough",
+      sensitivity: "normal",
+      zoom: "95",
+      message: "なめらか表示：細かい揺れを拾いすぎないようにします。",
+    },
+  };
+
+  const preset = presets[value] || presets.auto;
+  detailSelect.value = preset.detail;
+  sensitivitySelect.value = preset.sensitivity;
+  zoomSelect.value = preset.zoom;
+
+  if (!audioBuffer) {
+    statusEl.textContent = `${preset.message} 音源を選択するか、録音してください。`;
+  } else {
+    statusEl.textContent = `${preset.message} 解析できます。`;
+  }
+
+  if (segments.length > 0) drawPitchBars();
+}
+
+function markCustomPreset() {
+  const presetMap = {
+    auto: ["normal", "normal", "95"],
+    smallVoice: ["normal", "high", "95"],
+    noisy: ["normal", "low", "95"],
+    smooth: ["rough", "normal", "95"],
+  };
+
+  const current = [detailSelect.value, sensitivitySelect.value, zoomSelect.value];
+
+  for (const [name, values] of Object.entries(presetMap)) {
+    if (values.every((value, index) => value === current[index])) {
+      analysisPreset.value = name;
+      return;
+    }
+  }
+}
+
+async function loadAudioBlob(blob, options = {}) {
+  resetResult();
+
+  const label = options.label || "音源";
+  const sourceLabel = options.sourceLabel || "音源";
+  fileLabel.textContent = label;
+  statusEl.textContent = options.status || "音源を読み込み中です。";
+
+  if (audioObjectUrl) URL.revokeObjectURL(audioObjectUrl);
+  audioObjectUrl = URL.createObjectURL(blob);
+  audioEl.src = audioObjectUrl;
+  audioEl.classList.add("is-visible");
+
+  try {
+    audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
+    const arrayBuffer = await blob.arrayBuffer();
+    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+    const duration = audioBuffer.duration;
+    analyzeButton.disabled = false;
+    statusEl.textContent = `${sourceLabel}の読み込み完了：${formatTime(duration)}。解析できます。`;
+  } catch (error) {
+    console.error(error);
+    audioBuffer = null;
+    analyzeButton.disabled = true;
+    statusEl.textContent = "音源を読み込めませんでした。別の形式のファイルで試してください。";
+  }
+}
+
+async function startRecording() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    statusEl.textContent = "このブラウザでは録音機能が使えません。Chrome / Edge / Safariの最新版で試してください。";
+    return;
+  }
+
+  resetResult();
+
+  try {
+    audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
+
+    recordingStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+
+    recordedChunks = [];
+
+    const mimeType = getSupportedMimeType();
+    const options = mimeType ? { mimeType } : undefined;
+    mediaRecorder = new MediaRecorder(recordingStream, options);
+
+    mediaRecorder.addEventListener("dataavailable", (event) => {
+      if (event.data && event.data.size > 0) {
+        recordedChunks.push(event.data);
+      }
+    });
+
+    mediaRecorder.addEventListener("stop", async () => {
+      const blobType = mediaRecorder.mimeType || "audio/webm";
+      const recordingBlob = new Blob(recordedChunks, { type: blobType });
+
+      stopRecordingTracks();
+      stopRecordingTimer();
+
+      recordDot.classList.remove("is-recording");
+      recordStatus.textContent = "録音完了";
+      recordStartButton.disabled = false;
+      recordStopButton.disabled = true;
+
+      if (recordingBlob.size === 0) {
+        statusEl.textContent = "録音データを作成できませんでした。もう一度試してください。";
+        return;
+      }
+
+      await loadAudioBlob(recordingBlob, {
+        label: "録音した音源",
+        sourceLabel: "録音音源",
+        status: "録音音源を読み込み中です。",
+      });
+    });
+
+    mediaRecorder.start();
+    recordingStartAt = Date.now();
+    startRecordingTimer();
+
+    recordDot.classList.add("is-recording");
+    recordStatus.textContent = "録音中";
+    recordTimer.textContent = "0:00";
+    recordStartButton.disabled = true;
+    recordStopButton.disabled = false;
+    analyzeButton.disabled = true;
+    statusEl.textContent = "録音中です。鼻歌や歌声を入れて、終わったら録音停止を押してください。";
+  } catch (error) {
+    console.error(error);
+    stopRecordingTracks();
+    stopRecordingTimer();
+    recordDot.classList.remove("is-recording");
+    recordStatus.textContent = "録音できませんでした";
+    recordStartButton.disabled = false;
+    recordStopButton.disabled = true;
+
+    if (location.protocol !== "https:" && location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
+      statusEl.textContent = "録音にはHTTPSまたはlocalhost環境が必要な場合があります。Vercelなどに公開するか、ローカルサーバーで開いてください。";
+    } else {
+      statusEl.textContent = "マイクを使えませんでした。ブラウザのマイク許可を確認してください。";
+    }
+  }
+}
+
+function stopRecording() {
+  if (!mediaRecorder || mediaRecorder.state === "inactive") return;
+  mediaRecorder.stop();
+  recordStatus.textContent = "録音を保存中";
+  recordStopButton.disabled = true;
+  statusEl.textContent = "録音データを作成しています。";
+}
+
+function getSupportedMimeType() {
+  const types = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+  ];
+
+  for (const type of types) {
+    if (MediaRecorder.isTypeSupported?.(type)) {
+      return type;
+    }
+  }
+
+  return "";
+}
+
+function startRecordingTimer() {
+  stopRecordingTimer();
+  recordingTimerId = setInterval(() => {
+    const elapsed = (Date.now() - recordingStartAt) / 1000;
+    recordTimer.textContent = formatTime(elapsed);
+  }, 250);
+}
+
+function stopRecordingTimer() {
+  if (recordingTimerId) clearInterval(recordingTimerId);
+  recordingTimerId = null;
+}
+
+function stopRecordingTracks() {
+  if (recordingStream) {
+    recordingStream.getTracks().forEach((track) => track.stop());
+  }
+  recordingStream = null;
+}
+
+function resetResult() {
+  stopSynthPlayback({ silent: true });
+  frames = [];
+  segments = [];
+  drawState = null;
+  selectedSegment = null;
+  summaryEl.textContent = "解析結果はここに表示されます。";
+  selectedInfo.textContent = "バーをクリックすると、音名と時間が表示されます。";
+  updateResultButtons();
+  clearCanvas();
+}
+
+function clearCanvas() {
+  const ratio = window.devicePixelRatio || 1;
+  const width = canvas.parentElement?.clientWidth || 900;
+  canvas.style.width = "100%";
+  canvas.style.height = "240px";
+  canvas.width = Math.floor(width * ratio);
+  canvas.height = 240 * ratio;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, 240);
+}
+
+async function analyzePitch(buffer, options) {
+  const sourceSampleRate = buffer.sampleRate;
+  const mono = toMono(buffer);
+  const targetSampleRate = 12000;
+  const samples = resampleLinear(mono, sourceSampleRate, targetSampleRate);
+
+  const detail = {
+    rough: { hopSec: 0.14, minSegmentSec: 0.14 },
+    normal: { hopSec: 0.09, minSegmentSec: 0.10 },
+    fine: { hopSec: 0.06, minSegmentSec: 0.08 },
+  }[options.detail] || { hopSec: 0.09, minSegmentSec: 0.10 };
+
+  const sensitivity = {
+    low: { rms: 0.028, yinThreshold: 0.13, clarity: 0.76 },
+    normal: { rms: 0.018, yinThreshold: 0.16, clarity: 0.70 },
+    high: { rms: 0.010, yinThreshold: 0.19, clarity: 0.62 },
+  }[options.sensitivity] || { rms: 0.018, yinThreshold: 0.16, clarity: 0.70 };
+
+  const windowSize = 1024;
+  const hopSize = Math.max(1, Math.round(detail.hopSec * targetSampleRate));
+  const minFreq = 75;
+  const maxFreq = 1000;
+
+  const outFrames = [];
+  const totalSteps = Math.max(1, Math.floor((samples.length - windowSize) / hopSize));
+
+  for (let start = 0, i = 0; start + windowSize < samples.length; start += hopSize, i++) {
+    const time = start / targetSampleRate;
+
+    const rms = frameRms(samples, start, windowSize);
+    if (rms < sensitivity.rms) {
+      outFrames.push({
+        time,
+        duration: hopSize / targetSampleRate,
+        freq: null,
+        midi: null,
+        noteName: null,
+        confidence: 0,
+      });
+    } else {
+      const pitch = detectPitchYin(samples, start, windowSize, targetSampleRate, {
+        minFreq,
+        maxFreq,
+        yinThreshold: sensitivity.yinThreshold,
+      });
+
+      if (pitch && pitch.confidence >= sensitivity.clarity) {
+        const midi = frequencyToMidi(pitch.frequency);
+        outFrames.push({
+          time,
+          duration: hopSize / targetSampleRate,
+          freq: pitch.frequency,
+          midi,
+          noteName: midiToNoteName(midi),
+          confidence: pitch.confidence,
+        });
+      } else {
+        outFrames.push({
+          time,
+          duration: hopSize / targetSampleRate,
+          freq: null,
+          midi: null,
+          noteName: null,
+          confidence: pitch?.confidence || 0,
+        });
+      }
+    }
+
+    if (i % 25 === 0) {
+      const progress = Math.min(99, Math.round((i / totalSteps) * 100));
+      statusEl.textContent = `解析中... ${progress}%`;
+      await sleep(0);
+    }
+  }
+
+  const smoothed = smoothFrames(outFrames);
+  const outSegments = framesToSegments(smoothed, detail.minSegmentSec);
+
+  return {
+    frames: smoothed,
+    segments: outSegments,
+    sampleCount: samples.length,
+    sampleRate: targetSampleRate,
+    duration: buffer.duration,
+  };
+}
+
+function toMono(buffer) {
+  const length = buffer.length;
+  const channels = buffer.numberOfChannels;
+  const mono = new Float32Array(length);
+
+  for (let ch = 0; ch < channels; ch++) {
+    const data = buffer.getChannelData(ch);
+    for (let i = 0; i < length; i++) {
+      mono[i] += data[i] / channels;
+    }
+  }
+  return mono;
+}
+
+function resampleLinear(input, sourceRate, targetRate) {
+  if (sourceRate === targetRate) return input;
+
+  const ratio = sourceRate / targetRate;
+  const newLength = Math.floor(input.length / ratio);
+  const output = new Float32Array(newLength);
+
+  for (let i = 0; i < newLength; i++) {
+    const srcIndex = i * ratio;
+    const index = Math.floor(srcIndex);
+    const frac = srcIndex - index;
+    const a = input[index] || 0;
+    const b = input[index + 1] || a;
+    output[i] = a + (b - a) * frac;
+  }
+  return output;
+}
+
+function frameRms(samples, start, size) {
+  let sum = 0;
+  for (let i = 0; i < size; i++) {
+    const v = samples[start + i];
+    sum += v * v;
+  }
+  return Math.sqrt(sum / size);
+}
+
+function detectPitchYin(samples, start, windowSize, sampleRate, options) {
+  const minTau = Math.max(2, Math.floor(sampleRate / options.maxFreq));
+  const maxTau = Math.min(windowSize - 2, Math.ceil(sampleRate / options.minFreq));
+  const yinBuffer = new Float32Array(maxTau + 1);
+
+  yinBuffer[0] = 1;
+
+  for (let tau = minTau; tau <= maxTau; tau++) {
+    let sum = 0;
+    for (let i = 0; i < windowSize - tau; i++) {
+      const delta = samples[start + i] - samples[start + i + tau];
+      sum += delta * delta;
+    }
+    yinBuffer[tau] = sum;
+  }
+
+  let runningSum = 0;
+  for (let tau = minTau; tau <= maxTau; tau++) {
+    runningSum += yinBuffer[tau];
+    if (runningSum === 0) {
+      yinBuffer[tau] = 1;
+    } else {
+      yinBuffer[tau] = yinBuffer[tau] * tau / runningSum;
+    }
+  }
+
+  let tauEstimate = -1;
+  for (let tau = minTau + 1; tau < maxTau; tau++) {
+    if (yinBuffer[tau] < options.yinThreshold && yinBuffer[tau] <= yinBuffer[tau + 1]) {
+      while (tau + 1 < maxTau && yinBuffer[tau + 1] < yinBuffer[tau]) tau++;
+      tauEstimate = tau;
+      break;
+    }
+  }
+
+  if (tauEstimate === -1) {
+    let minValue = Infinity;
+    let minIndex = -1;
+    for (let tau = minTau; tau <= maxTau; tau++) {
+      if (yinBuffer[tau] < minValue) {
+        minValue = yinBuffer[tau];
+        minIndex = tau;
+      }
+    }
+    if (minValue > 0.26) return null;
+    tauEstimate = minIndex;
+  }
+
+  const betterTau = parabolicInterpolation(yinBuffer, tauEstimate);
+  const frequency = sampleRate / betterTau;
+  const confidence = Math.max(0, Math.min(1, 1 - yinBuffer[tauEstimate]));
+
+  if (!Number.isFinite(frequency) || frequency < options.minFreq || frequency > options.maxFreq) {
+    return null;
+  }
+
+  return { frequency, confidence };
+}
+
+function parabolicInterpolation(buffer, tau) {
+  const x0 = tau < 1 ? tau : tau - 1;
+  const x2 = tau + 1 < buffer.length ? tau + 1 : tau;
+
+  if (x0 === tau || x2 === tau) return tau;
+
+  const s0 = buffer[x0];
+  const s1 = buffer[tau];
+  const s2 = buffer[x2];
+  const denominator = 2 * (2 * s1 - s2 - s0);
+
+  if (denominator === 0) return tau;
+  return tau + (s2 - s0) / denominator;
+}
+
+function smoothFrames(inputFrames) {
+  const output = inputFrames.map((frame) => ({ ...frame }));
+
+  for (let i = 1; i < output.length - 1; i++) {
+    const prev = output[i - 1];
+    const cur = output[i];
+    const next = output[i + 1];
+
+    if (!cur.midi && prev.midi && next.midi && prev.midi === next.midi) {
+      output[i].midi = prev.midi;
+      output[i].noteName = prev.noteName;
+      output[i].freq = prev.freq;
+      output[i].confidence = Math.min(prev.confidence, next.confidence) * 0.92;
+    }
+
+    if (cur.midi && prev.midi && next.midi) {
+      const sorted = [prev.midi, cur.midi, next.midi].sort((a, b) => a - b);
+      const median = sorted[1];
+
+      if (Math.abs(cur.midi - median) >= 2) {
+        output[i].midi = median;
+        output[i].noteName = midiToNoteName(median);
+        output[i].freq = midiToFrequency(median);
+      }
+    }
+  }
+
+  return output;
+}
+
+function framesToSegments(inputFrames, minSegmentSec) {
+  const result = [];
+  let current = null;
+
+  for (const frame of inputFrames) {
+    if (!frame.midi) {
+      if (current) {
+        current.end = frame.time;
+        result.push(current);
+        current = null;
+      }
+      continue;
+    }
+
+    if (!current) {
+      current = createSegmentFromFrame(frame);
+      continue;
+    }
+
+    const gap = frame.time - current.end;
+    const isSameOrNear = Math.abs(frame.midi - current.midi) <= 0;
+    const isContinuous = gap <= frame.duration * 1.8;
+
+    if (isSameOrNear && isContinuous) {
+      current.end = frame.time + frame.duration;
+      current.freqValues.push(frame.freq);
+      current.confValues.push(frame.confidence);
+      current.freq = average(current.freqValues);
+      current.confidence = average(current.confValues);
+    } else {
+      result.push(current);
+      current = createSegmentFromFrame(frame);
+    }
+  }
+
+  if (current) result.push(current);
+
+  return result
+    .filter((seg) => seg.end - seg.start >= minSegmentSec)
+    .map((seg) => ({
+      ...seg,
+      noteName: midiToNoteName(seg.midi),
+      freq: average(seg.freqValues),
+      confidence: average(seg.confValues),
+    }));
+}
+
+function createSegmentFromFrame(frame) {
+  return {
+    start: frame.time,
+    end: frame.time + frame.duration,
+    midi: frame.midi,
+    noteName: frame.noteName,
+    freq: frame.freq,
+    confidence: frame.confidence,
+    freqValues: [frame.freq],
+    confValues: [frame.confidence],
+  };
+}
+
+function drawPitchBars() {
+  if (!segments.length) {
+    clearCanvas();
+    updateResultButtons();
+    return;
+  }
+  updateResultButtons();
+
+  const duration = audioBuffer?.duration || segments[segments.length - 1].end || 1;
+  const minMidi = Math.max(24, Math.min(...segments.map((s) => s.midi)) - 2);
+  const maxMidi = Math.min(96, Math.max(...segments.map((s) => s.midi)) + 2);
+  const rows = [];
+
+  for (let midi = maxMidi; midi >= minMidi; midi--) {
+    rows.push(midi);
+  }
+
+  const dpr = window.devicePixelRatio || 1;
+  const left = 68;
+  const right = 24;
+  const top = 26;
+  const bottom = 34;
+  const rowHeight = 30;
+  const pxPerSec = Number(zoomSelect.value || 95);
+  const chartWidth = Math.max(canvas.parentElement.clientWidth - left - right, duration * pxPerSec);
+  const width = Math.ceil(left + chartWidth + right);
+  const height = Math.ceil(top + rows.length * rowHeight + bottom);
+
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  canvas.width = Math.ceil(width * dpr);
+  canvas.height = Math.ceil(height * dpr);
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  drawState = {
+    duration,
+    minMidi,
+    maxMidi,
+    rows,
+    left,
+    right,
+    top,
+    bottom,
+    rowHeight,
+    chartWidth,
+    width,
+    height,
+    pxPerSec,
+  };
+
+  renderCanvas();
+}
+
+function renderCanvas() {
+  if (!drawState) return;
+
+  const s = drawState;
+  ctx.clearRect(0, 0, s.width, s.height);
+
+  ctx.fillStyle = "#fffdf8";
+  ctx.fillRect(0, 0, s.width, s.height);
+
+  drawGrid(s);
+  drawBars(s);
+  drawPlayhead(s);
+}
+
+function drawGrid(s) {
+  ctx.font = "13px sans-serif";
+  ctx.textBaseline = "middle";
+
+  s.rows.forEach((midi, index) => {
+    const y = s.top + index * s.rowHeight;
+    const isNatural = !midiToNoteName(midi).includes("#");
+
+    ctx.fillStyle = isNatural ? "#fffaf2" : "#fffdf8";
+    ctx.fillRect(0, y, s.width, s.rowHeight);
+
+    ctx.strokeStyle = "#f0e1d2";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(s.left, y + s.rowHeight);
+    ctx.lineTo(s.width - s.right, y + s.rowHeight);
+    ctx.stroke();
+
+    ctx.fillStyle = isNatural ? "#7a5740" : "#b79678";
+    ctx.textAlign = "right";
+    ctx.fillText(displayNoteName(midi), s.left - 12, y + s.rowHeight / 2);
+  });
+
+  const seconds = Math.ceil(s.duration);
+  ctx.font = "12px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+
+  for (let sec = 0; sec <= seconds; sec++) {
+    const x = s.left + sec * s.pxPerSec;
+
+    ctx.strokeStyle = sec % 5 === 0 ? "#dcc5ad" : "#f1e4d6";
+    ctx.lineWidth = sec % 5 === 0 ? 1.4 : 1;
+    ctx.beginPath();
+    ctx.moveTo(x, s.top);
+    ctx.lineTo(x, s.height - s.bottom);
+    ctx.stroke();
+
+    if (sec % 2 === 0) {
+      ctx.fillStyle = "#9b7c61";
+      ctx.fillText(`${sec}s`, x, s.height - s.bottom + 8);
+    }
+  }
+
+  ctx.strokeStyle = "#d3b89e";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(s.left, s.top, s.chartWidth, s.rows.length * s.rowHeight);
+}
+
+function drawBars(s) {
+  for (const seg of segments) {
+    const rowIndex = s.rows.indexOf(seg.midi);
+    if (rowIndex < 0) continue;
+
+    const x = s.left + seg.start * s.pxPerSec;
+    const y = s.top + rowIndex * s.rowHeight + 6;
+    const w = Math.max(6, (seg.end - seg.start) * s.pxPerSec);
+    const h = s.rowHeight - 12;
+    const isSelected = selectedSegment === seg;
+
+    ctx.fillStyle = isSelected ? "#d4661f" : "#ef8f35";
+    roundedRect(ctx, x, y, w, h, 7);
+    ctx.fill();
+
+    if (w > 34) {
+      ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(displayNoteName(seg.midi).replace(/\d/g, ""), x + w / 2, y + h / 2);
+    }
+  }
+}
+
+function drawPlayhead(s) {
+  const time = getDisplayPlayheadTime();
+  if (time === null) return;
+
+  const x = s.left + time * s.pxPerSec;
+  if (x < s.left || x > s.width - s.right) return;
+
+  ctx.strokeStyle = isSynthPlaying ? "#7d5f2e" : "#c43b22";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x, s.top - 6);
+  ctx.lineTo(x, s.height - s.bottom);
+  ctx.stroke();
+
+  ctx.fillStyle = isSynthPlaying ? "#7d5f2e" : "#c43b22";
+  ctx.beginPath();
+  ctx.arc(x, s.top - 8, 5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function getDisplayPlayheadTime() {
+  if (isSynthPlaying && synthStartAudioTime !== null && audioContext) {
+    return Math.max(0, Math.min(synthDuration, audioContext.currentTime - synthStartAudioTime));
+  }
+
+  if (audioEl.src && (!audioEl.paused || audioEl.currentTime > 0)) {
+    return audioEl.currentTime;
+  }
+
+  return null;
+}
+
+function hitTestSegment(x, y) {
+  const s = drawState;
+  for (const seg of segments) {
+    const rowIndex = s.rows.indexOf(seg.midi);
+    if (rowIndex < 0) continue;
+
+    const bx = s.left + seg.start * s.pxPerSec;
+    const by = s.top + rowIndex * s.rowHeight + 4;
+    const bw = Math.max(6, (seg.end - seg.start) * s.pxPerSec);
+    const bh = s.rowHeight - 8;
+
+    if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) {
+      return seg;
+    }
+  }
+  return null;
+}
+
+function startPlayhead() {
+  stopPlayhead();
+  const loop = () => {
+    renderCanvas();
+    rafId = requestAnimationFrame(loop);
+  };
+  loop();
+}
+
+function stopPlayhead() {
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = null;
+  renderCanvas();
+}
+
+function updateResultButtons() {
+  const hasResult = segments.length > 0;
+
+  if (saveImageButton) saveImageButton.disabled = !hasResult;
+  if (playSynthButton) playSynthButton.disabled = !hasResult || isSynthPlaying;
+  if (stopSynthButton) stopSynthButton.disabled = !isSynthPlaying;
+}
+
+async function playSynthFromBars() {
+  if (!segments.length) {
+    statusEl.textContent = "再生できる音程バーがありません。先に解析してください。";
+    return;
+  }
+
+  try {
+    audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
+    await audioContext.resume();
+
+    if (!audioEl.paused) {
+      audioEl.pause();
+    }
+
+    stopSynthPlayback({ silent: true });
+
+    const startAt = audioContext.currentTime + 0.08;
+    const lastEnd = Math.max(...segments.map((seg) => seg.end));
+    synthDuration = Math.max(audioBuffer?.duration || 0, lastEnd);
+    synthStartAudioTime = startAt;
+    isSynthPlaying = true;
+    synthNodes = [];
+
+    const masterGain = audioContext.createGain();
+    masterGain.gain.setValueAtTime(0.82, startAt);
+    masterGain.connect(audioContext.destination);
+    synthNodes.push(masterGain);
+
+    for (const seg of segments) {
+      const start = startAt + Math.max(0, seg.start);
+      const end = startAt + Math.max(seg.start + 0.04, seg.end);
+      const duration = end - start;
+
+      if (duration <= 0.03) continue;
+
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(midiToFrequency(seg.midi), start);
+
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.16, start + 0.015);
+      gain.gain.setValueAtTime(0.16, Math.max(start + 0.02, end - 0.035));
+      gain.gain.linearRampToValueAtTime(0, end);
+
+      osc.connect(gain);
+      gain.connect(masterGain);
+
+      osc.start(start);
+      osc.stop(end + 0.04);
+
+      synthNodes.push(osc, gain);
+    }
+
+    updateResultButtons();
+    statusEl.textContent = "解析したバーをドレミ音で再生中です。";
+    selectedInfo.textContent = "ドレミ音で再生中です。元の声と聞き比べると、音の動きが確認しやすくなります。";
+    startPlayhead();
+
+    const finishAfterMs = Math.max(100, (synthDuration + 0.22) * 1000);
+    synthEndTimer = setTimeout(() => {
+      finishSynthPlayback();
+    }, finishAfterMs);
+  } catch (error) {
+    console.error(error);
+    stopSynthPlayback({ silent: true });
+    statusEl.textContent = "ドレミ音の再生中にエラーが起きました。ブラウザの音声再生許可を確認してください。";
+  }
+}
+
+function finishSynthPlayback() {
+  clearSynthNodes();
+  isSynthPlaying = false;
+  synthStartAudioTime = null;
+  synthDuration = 0;
+
+  if (synthEndTimer) clearTimeout(synthEndTimer);
+  synthEndTimer = null;
+
+  updateResultButtons();
+  stopPlayhead();
+  statusEl.textContent = "ドレミ音の再生が完了しました。";
+}
+
+function stopSynthPlayback(options = {}) {
+  const wasPlaying = isSynthPlaying;
+
+  clearSynthNodes();
+  isSynthPlaying = false;
+  synthStartAudioTime = null;
+  synthDuration = 0;
+
+  if (synthEndTimer) clearTimeout(synthEndTimer);
+  synthEndTimer = null;
+
+  updateResultButtons();
+
+  if (wasPlaying) {
+    stopPlayhead();
+    if (!options.silent) {
+      statusEl.textContent = "ドレミ音の再生を停止しました。";
+    }
+  }
+}
+
+function clearSynthNodes() {
+  for (const node of synthNodes) {
+    try {
+      if (typeof node.stop === "function") node.stop(0);
+    } catch (error) {
+      // すでに停止済みのノードは無視します。
+    }
+
+    try {
+      if (typeof node.disconnect === "function") node.disconnect();
+    } catch (error) {
+      // すでに切断済みのノードは無視します。
+    }
+  }
+
+  synthNodes = [];
+}
+
+function updateSummary(result) {
+  const targetSegments = result.segments || segments;
+  const usedNotes = [...new Set(targetSegments.map((s) => displayNoteName(s.midi)))];
+  const minNote = displayNoteName(Math.min(...targetSegments.map((s) => s.midi)));
+  const maxNote = displayNoteName(Math.max(...targetSegments.map((s) => s.midi)));
+  const detailNote = noteDisplayMode.value === "simple"
+    ? "音名はドレミだけで表示しています。詳しく見たい時は「詳しめ表示」に切り替えられます。"
+    : "音名はオクターブ番号つきで表示しています。";
+
+  summaryEl.innerHTML = `
+    <strong>${targetSegments.length}個</strong>の音程バーを検出しました。
+    音域は <strong>${minNote}</strong> 〜 <strong>${maxNote}</strong> あたりです。
+    使われている音：${usedNotes.join("、")}<br>
+    ${detailNote}
+  `;
+}
+
+function displayNoteName(midi) {
+  const detailed = midiToNoteName(midi);
+  if (noteDisplayMode.value === "detailed") return detailed;
+  return detailed.replace(/[0-9-]/g, "");
+}
+
+function savePitchImage() {
+  if (!segments.length || !drawState) {
+    statusEl.textContent = "保存できる音程バーがありません。先に解析してください。";
+    return;
+  }
+
+  renderCanvas();
+
+  const link = document.createElement("a");
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\..+/, "")
+    .replace("T", "_");
+
+  link.download = `doremi_bar_${stamp}.png`;
+  link.href = canvas.toDataURL("image/png");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  statusEl.textContent = "音程バー画像を保存しました。";
+}
+
+function frequencyToMidi(freq) {
+  return Math.round(69 + 12 * Math.log2(freq / 440));
+}
+
+function midiToFrequency(midi) {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+function midiToNoteName(midi) {
+  const note = NOTE_NAMES[((midi % 12) + 12) % 12];
+  const octave = Math.floor(midi / 12) - 1;
+  return `${note}${octave}`;
+}
+
+function average(values) {
+  const valid = values.filter((v) => Number.isFinite(v));
+  if (!valid.length) return 0;
+  return valid.reduce((sum, value) => sum + value, 0) / valid.length;
+}
+
+function formatTime(sec) {
+  if (!Number.isFinite(sec)) return "0:00";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function roundedRect(ctx, x, y, w, h, r) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + w - radius, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+  ctx.lineTo(x + w, y + h - radius);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+  ctx.lineTo(x + radius, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+clearCanvas();
