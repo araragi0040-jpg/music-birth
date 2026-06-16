@@ -182,9 +182,9 @@ chartDisplayMode.addEventListener("change", () => {
 saveImageButton.addEventListener("click", savePitchImage);
 playSynthButton.addEventListener("click", playSynthFromBars);
 stopSynthButton.addEventListener("click", () => stopSynthPlayback());
-downloadOriginalButton.addEventListener("click", downloadOriginalAudio);
-downloadWavButton.addEventListener("click", downloadWavAudio);
-downloadSynthWavButton.addEventListener("click", downloadSynthWavAudio);
+if (downloadOriginalButton) downloadOriginalButton.addEventListener("click", downloadOriginalAudio);
+if (downloadWavButton) downloadWavButton.addEventListener("click", downloadWavAudio);
+if (downloadSynthWavButton) downloadSynthWavButton.addEventListener("click", downloadSynthWavAudio);
 
 
 
@@ -258,22 +258,22 @@ function updateExportButtons() {
 
 async function downloadSynthWavAudio() {
   if (!segments.length) {
-    synthExportStatus.textContent = "保存できるドレミ音がありません。先に解析してください。";
+    if (synthExportStatus) synthExportStatus.textContent = "保存できるドレミ音がありません。先に解析してください。";
     return;
   }
 
   try {
     downloadSynthWavButton.disabled = true;
-    synthExportStatus.textContent = "ドレミ音のWAVを作成中です。";
+    if (synthExportStatus) synthExportStatus.textContent = "ドレミ音のWAVを作成中です。";
 
     const wavBlob = await renderSynthSegmentsToWavBlob();
     const filename = `doremi_keyboard_${timestampForFile()}.wav`;
 
     downloadBlob(wavBlob, filename);
-    synthExportStatus.textContent = `ドレミ音をWAV保存しました：${filename}`;
+    if (synthExportStatus) synthExportStatus.textContent = `ドレミ音をWAV保存しました：${filename}`;
   } catch (error) {
     console.error(error);
-    synthExportStatus.textContent = "ドレミ音のWAV保存中にエラーが起きました。短めの音源で再度試してください。";
+    if (synthExportStatus) synthExportStatus.textContent = "ドレミ音のWAV保存中にエラーが起きました。短めの音源で再度試してください。";
   } finally {
     updateResultButtons();
   }
@@ -282,37 +282,169 @@ async function downloadSynthWavAudio() {
 async function renderSynthSegmentsToWavBlob() {
   const lastEnd = Math.max(...segments.map((seg) => seg.end));
   const duration = Math.max(0.5, lastEnd + 0.45);
-  const length = Math.ceil(duration * SYNTH_SAMPLE_RATE);
   const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
 
-  if (!OfflineCtx) {
-    throw new Error("OfflineAudioContext is not supported.");
+  if (OfflineCtx) {
+    try {
+      const length = Math.ceil(duration * SYNTH_SAMPLE_RATE);
+      const offline = new OfflineCtx(2, length, SYNTH_SAMPLE_RATE);
+      const masterGain = offline.createGain();
+      const compressor = offline.createDynamicsCompressor();
+      const volumeMultiplier = Number(synthVolume?.value || 2.6);
+
+      masterGain.gain.setValueAtTime(volumeMultiplier, 0);
+      compressor.threshold.setValueAtTime(-12, 0);
+      compressor.knee.setValueAtTime(18, 0);
+      compressor.ratio.setValueAtTime(7, 0);
+      compressor.attack.setValueAtTime(0.006, 0);
+      compressor.release.setValueAtTime(0.22, 0);
+
+      masterGain.connect(compressor);
+      compressor.connect(offline.destination);
+
+      const temporaryNodes = [];
+      for (const seg of segments) {
+        const start = Math.max(0, seg.start);
+        const end = Math.max(seg.start + 0.05, seg.end);
+        scheduleKeyboardNote(offline, masterGain, seg.midi, start, end, synthTone?.value || "keyboard", temporaryNodes);
+      }
+
+      const rendered = await offline.startRendering();
+      return audioBufferToWavBlob(rendered);
+    } catch (error) {
+      console.warn("OfflineAudioContext rendering failed. Falling back to manual synth.", error);
+    }
   }
 
-  const offline = new OfflineCtx(2, length, SYNTH_SAMPLE_RATE);
-  const masterGain = offline.createGain();
-  const compressor = offline.createDynamicsCompressor();
-  const volumeMultiplier = Number(synthVolume?.value || 2.6);
+  return renderSynthSegmentsToManualWavBlob(duration);
+}
 
-  masterGain.gain.setValueAtTime(volumeMultiplier, 0);
-  compressor.threshold.setValueAtTime(-12, 0);
-  compressor.knee.setValueAtTime(18, 0);
-  compressor.ratio.setValueAtTime(7, 0);
-  compressor.attack.setValueAtTime(0.006, 0);
-  compressor.release.setValueAtTime(0.22, 0);
+function renderSynthSegmentsToManualWavBlob(duration) {
+  const sampleRate = SYNTH_SAMPLE_RATE;
+  const channels = 2;
+  const length = Math.ceil(duration * sampleRate);
+  const left = new Float32Array(length);
+  const right = new Float32Array(length);
+  const tone = synthTone?.value || "keyboard";
+  const volume = Number(synthVolume?.value || 2.6);
+  const toneConfig = getManualToneConfig(tone);
 
-  masterGain.connect(compressor);
-  compressor.connect(offline.destination);
-
-  const temporaryNodes = [];
   for (const seg of segments) {
-    const start = Math.max(0, seg.start);
-    const end = Math.max(seg.start + 0.05, seg.end);
-    scheduleKeyboardNote(offline, masterGain, seg.midi, start, end, synthTone?.value || "keyboard", temporaryNodes);
+    const startIndex = Math.max(0, Math.floor(seg.start * sampleRate));
+    const endIndex = Math.min(length, Math.ceil((seg.end + toneConfig.release) * sampleRate));
+    const freq = midiToFrequency(seg.midi);
+
+    for (let i = startIndex; i < endIndex; i++) {
+      const t = (i - startIndex) / sampleRate;
+      const noteTime = i / sampleRate - seg.start;
+      const noteDuration = Math.max(0.05, seg.end - seg.start);
+      const env = keyboardEnvelope(noteTime, noteDuration, toneConfig);
+      if (env <= 0.00001) continue;
+
+      let sample = 0;
+      for (const partial of toneConfig.partials) {
+        sample += Math.sin(2 * Math.PI * freq * partial.ratio * t) * partial.gain;
+      }
+
+      sample = Math.tanh(sample * env * toneConfig.gain * volume);
+      left[i] += sample;
+      right[i] += sample;
+    }
   }
 
-  const rendered = await offline.startRendering();
-  return audioBufferToWavBlob(rendered);
+  let peak = 0;
+  for (let i = 0; i < length; i++) {
+    peak = Math.max(peak, Math.abs(left[i]), Math.abs(right[i]));
+  }
+  const normalize = peak > 0.98 ? 0.98 / peak : 1;
+
+  const pseudoBuffer = {
+    numberOfChannels: channels,
+    sampleRate,
+    length,
+    getChannelData(ch) {
+      const source = ch === 0 ? left : right;
+      if (normalize !== 1) {
+        const normalized = new Float32Array(source.length);
+        for (let i = 0; i < source.length; i++) normalized[i] = source[i] * normalize;
+        return normalized;
+      }
+      return source;
+    },
+  };
+
+  return audioBufferToWavBlob(pseudoBuffer);
+}
+
+function getManualToneConfig(tone) {
+  if (tone === "simple") {
+    return {
+      gain: 0.18,
+      attack: 0.012,
+      decay: 0.18,
+      sustain: 0.64,
+      release: 0.14,
+      partials: [
+        { ratio: 1, gain: 1.0 },
+        { ratio: 2, gain: 0.14 },
+      ],
+    };
+  }
+
+  if (tone === "bright") {
+    return {
+      gain: 0.19,
+      attack: 0.008,
+      decay: 0.26,
+      sustain: 0.46,
+      release: 0.18,
+      partials: [
+        { ratio: 1, gain: 1.0 },
+        { ratio: 2, gain: 0.34 },
+        { ratio: 3, gain: 0.12 },
+        { ratio: 4, gain: 0.05 },
+      ],
+    };
+  }
+
+  return {
+    gain: 0.18,
+    attack: 0.01,
+    decay: 0.34,
+    sustain: 0.42,
+    release: 0.20,
+    partials: [
+      { ratio: 1, gain: 1.0 },
+      { ratio: 2, gain: 0.27 },
+      { ratio: 3, gain: 0.10 },
+      { ratio: 5, gain: 0.035 },
+    ],
+  };
+}
+
+function keyboardEnvelope(t, duration, config) {
+  if (t < 0) return 0;
+
+  if (t < config.attack) {
+    return t / config.attack;
+  }
+
+  const decayEnd = config.attack + config.decay;
+  if (t < decayEnd) {
+    const p = (t - config.attack) / config.decay;
+    return 1 + (config.sustain - 1) * p;
+  }
+
+  if (t < duration) {
+    return config.sustain;
+  }
+
+  const releaseT = t - duration;
+  if (releaseT < config.release) {
+    return config.sustain * (1 - releaseT / config.release);
+  }
+
+  return 0;
 }
 
 function downloadOriginalAudio() {
