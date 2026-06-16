@@ -754,3 +754,75 @@ main,
     flex-basis: 100%;
   }
 }
+
+
+/* v015: keep initial mobile layout width after analysis */
+*,
+*::before,
+*::after {
+  min-width: 0;
+}
+
+html {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  overflow-x: clip;
+}
+
+body {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  overflow-x: clip;
+  touch-action: pan-y;
+}
+
+.app {
+  inline-size: min(1100px, calc(100vw - 18px));
+  max-inline-size: min(1100px, calc(100vw - 18px));
+}
+
+.result-panel {
+  contain: inline-size layout paint;
+}
+
+.canvas-wrap {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  block-size: var(--canvas-height, 240px);
+  min-block-size: 180px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  contain: size layout paint;
+  display: block;
+  scrollbar-gutter: stable;
+}
+
+#pitchCanvas {
+  display: block;
+  max-inline-size: none !important;
+  inline-size: var(--canvas-width, 100%) !important;
+  block-size: var(--canvas-height, 240px) !important;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 760px) {
+  .app {
+    inline-size: calc(100vw - 18px);
+    max-inline-size: calc(100vw - 18px);
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .hero,
+  .panel {
+    inline-size: 100%;
+    max-inline-size: 100%;
+  }
+
+  .canvas-wrap {
+    inline-size: 100%;
+    max-inline-size: 100%;
+  }
+}

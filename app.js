@@ -760,13 +760,25 @@ function resetResult() {
 
 function clearCanvas() {
   const ratio = window.devicePixelRatio || 1;
-  const width = canvas.parentElement?.clientWidth || 900;
-  canvas.style.width = "100%";
-  canvas.style.height = "240px";
-  canvas.width = Math.floor(width * ratio);
-  canvas.height = 240 * ratio;
+  const wrap = canvas.parentElement;
+  const safeWidth = Math.max(240, Math.min(wrap?.getBoundingClientRect().width || window.innerWidth - 18, window.innerWidth - 18));
+  const safeHeight = 240;
+
+  if (wrap) {
+    wrap.style.width = "100%";
+    wrap.style.maxWidth = "100%";
+    wrap.style.setProperty("--canvas-width", `${safeWidth}px`);
+    wrap.style.setProperty("--canvas-height", `${safeHeight}px`);
+    wrap.style.height = `${safeHeight}px`;
+    wrap.scrollLeft = 0;
+  }
+
+  canvas.style.width = `${safeWidth}px`;
+  canvas.style.height = `${safeHeight}px`;
+  canvas.width = Math.floor(safeWidth * ratio);
+  canvas.height = safeHeight * ratio;
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-  ctx.clearRect(0, 0, width, 240);
+  ctx.clearRect(0, 0, safeWidth, safeHeight);
 }
 
 async function analyzePitch(buffer, options) {
@@ -1135,7 +1147,9 @@ function drawPitchBars() {
   const bottom = isMobile ? 40 : 34;
   const rowHeight = isMobile ? 34 : 30;
   const selectedPxPerSec = Number(zoomSelect.value || 95);
-  const availableWidth = Math.max(240, canvas.parentElement.clientWidth - left - right);
+  const wrapRectWidth = canvas.parentElement?.getBoundingClientRect().width || 0;
+  const viewportSafeWidth = Math.max(240, Math.min(wrapRectWidth || window.innerWidth - 18, window.innerWidth - 18));
+  const availableWidth = Math.max(220, viewportSafeWidth - left - right);
   const pxPerSec = isFitMode
     ? Math.max(8, availableWidth / Math.max(duration, 1))
     : selectedPxPerSec;
@@ -1144,6 +1158,15 @@ function drawPitchBars() {
     : Math.max(availableWidth, duration * pxPerSec);
   const width = Math.ceil(left + chartWidth + right);
   const height = Math.ceil(top + rows.length * rowHeight + bottom);
+
+  const wrap = canvas.parentElement;
+  if (wrap) {
+    wrap.style.width = "100%";
+    wrap.style.maxWidth = "100%";
+    wrap.style.setProperty("--canvas-width", `${width}px`);
+    wrap.style.setProperty("--canvas-height", `${height}px`);
+    wrap.style.height = `${height}px`;
+  }
 
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
