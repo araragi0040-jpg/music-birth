@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ドレミバー v012</title>
+  <title>ドレミバー v013</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -14,7 +14,7 @@
         <h1>ドレミバー</h1>
         <p class="lead">
           鼻歌や歌声の音程を、カラオケの音程バーのように見える化します。
-          v012では、ドレミ音のWAV保存ボタンが反応しない問題を修正し、キーボード風ドレミ音の保存に対応しました。
+          v013では、保存ボタンが薄いまま押せない問題を修正し、データがない場合は画面メッセージで案内する形にしました。
         </p>
       </div>
     </header>
@@ -142,11 +142,11 @@
             録音した声そのものを保存できます。作曲アプリに入れる場合は、互換性の高いWAV保存がおすすめです。
           </p>
           <div class="export-tools">
-            <button id="downloadOriginalButton" class="secondary" disabled>元の音源を保存</button>
-            <button id="downloadWavButton" class="secondary" disabled>録音音源をWAV保存</button>
+            <button id="downloadOriginalButton" class="secondary">元の音源を保存</button>
+            <button id="downloadWavButton" class="secondary">録音音源をWAV保存</button>
           </div>
           <div id="exportStatus" class="export-status">
-            録音または音源読み込み後に保存できます。
+            録音または音源読み込み後に保存できます。保存ボタンは常に押せますが、データがない場合は理由を表示します。
           </div>
         </div>
       </section>
@@ -205,10 +205,10 @@
             解析された音程バーを、現在選択しているドレミ音色でWAV保存できます。
           </p>
           <div class="export-tools">
-            <button id="downloadSynthWavButton" class="secondary" disabled>ドレミ音をWAV保存</button>
+            <button id="downloadSynthWavButton" class="secondary">ドレミ音をWAV保存</button>
           </div>
           <div id="synthExportStatus" class="export-status">
-            解析後に保存できます。
+            解析後に保存できます。まだ解析結果がない場合は理由を表示します。
           </div>
         </div>
 

@@ -1,7 +1,7 @@
 {
   "name": "doremi-bar",
-  "version": "0.12.0",
-  "description": "鼻歌・歌声の単音を可視化し、キーボード風ドレミ音をWAV出力できるブラウザアプリ",
+  "version": "0.13.0",
+  "description": "鼻歌・歌声の単音を可視化し、録音音源とキーボード風ドレミ音をWAV出力できるブラウザアプリ",
   "type": "module",
   "private": true
 }

@@ -249,11 +249,10 @@ function markCustomPreset() {
 }
 
 function updateExportButtons() {
-  const hasBlob = !!currentAudioBlob;
-  const hasBuffer = !!audioBuffer;
-
-  if (downloadOriginalButton) downloadOriginalButton.disabled = !hasBlob;
-  if (downloadWavButton) downloadWavButton.disabled = !hasBuffer;
+  // 保存ボタンは常に押せる状態にします。
+  // データがない場合は、各保存処理内で理由を表示します。
+  if (downloadOriginalButton) downloadOriginalButton.disabled = false;
+  if (downloadWavButton) downloadWavButton.disabled = false;
 }
 
 async function downloadSynthWavAudio() {
@@ -263,7 +262,7 @@ async function downloadSynthWavAudio() {
   }
 
   try {
-    downloadSynthWavButton.disabled = true;
+    if (downloadSynthWavButton) downloadSynthWavButton.classList.add("is-processing");
     if (synthExportStatus) synthExportStatus.textContent = "ドレミ音のWAVを作成中です。";
 
     const wavBlob = await renderSynthSegmentsToWavBlob();
@@ -275,6 +274,7 @@ async function downloadSynthWavAudio() {
     console.error(error);
     if (synthExportStatus) synthExportStatus.textContent = "ドレミ音のWAV保存中にエラーが起きました。短めの音源で再度試してください。";
   } finally {
+    if (downloadSynthWavButton) downloadSynthWavButton.classList.remove("is-processing");
     updateResultButtons();
   }
 }
@@ -449,7 +449,7 @@ function keyboardEnvelope(t, duration, config) {
 
 function downloadOriginalAudio() {
   if (!currentAudioBlob) {
-    exportStatus.textContent = "保存できる音源がありません。先に録音または音源読み込みをしてください。";
+    if (exportStatus) exportStatus.textContent = "保存できる音源がありません。先に録音または音源読み込みをしてください。";
     return;
   }
 
@@ -458,12 +458,12 @@ function downloadOriginalAudio() {
   const filename = `${baseName}_${timestampForFile()}.${extension}`;
 
   downloadBlob(currentAudioBlob, filename);
-  exportStatus.textContent = `元の音源を保存しました：${filename}`;
+  if (exportStatus) exportStatus.textContent = `元の音源を保存しました：${filename}`;
 }
 
 function downloadWavAudio() {
   if (!audioBuffer) {
-    exportStatus.textContent = "WAV保存できる音源がありません。先に録音または音源読み込みをしてください。";
+    if (exportStatus) exportStatus.textContent = "WAV保存できる音源がありません。先に録音または音源読み込みをしてください。";
     return;
   }
 
@@ -473,10 +473,10 @@ function downloadWavAudio() {
     const filename = `${baseName}_${timestampForFile()}.wav`;
 
     downloadBlob(wavBlob, filename);
-    exportStatus.textContent = `WAVで保存しました：${filename}`;
+    if (exportStatus) exportStatus.textContent = `WAVで保存しました：${filename}`;
   } catch (error) {
     console.error(error);
-    exportStatus.textContent = "WAV保存中にエラーが起きました。短めの音源で再度試してください。";
+    if (exportStatus) exportStatus.textContent = "WAV保存中にエラーが起きました。短めの音源で再度試してください。";
   }
 }
 
@@ -593,7 +593,7 @@ async function loadAudioBlob(blob, options = {}) {
     const duration = audioBuffer.duration;
     analyzeButton.disabled = false;
     statusEl.textContent = `${sourceLabel}の読み込み完了：${formatTime(duration)}。解析できます。`;
-    exportStatus.textContent = `${sourceLabel}を保存できます。作曲アプリ用にはWAV保存がおすすめです。`;
+    if (exportStatus) exportStatus.textContent = `${sourceLabel}を保存できます。作曲アプリ用にはWAV保存がおすすめです。`;
     updateExportButtons();
   } catch (error) {
     console.error(error);
@@ -603,7 +603,7 @@ async function loadAudioBlob(blob, options = {}) {
     currentSourceKind = "";
     analyzeButton.disabled = true;
     statusEl.textContent = "音源を読み込めませんでした。別の形式のファイルで試してください。";
-    exportStatus.textContent = "音源を読み込めなかったため、保存できません。";
+    if (exportStatus) exportStatus.textContent = "音源を読み込めなかったため、保存できません。";
     updateExportButtons();
   }
 }
@@ -614,7 +614,7 @@ async function startRecording() {
   currentSourceKind = "";
   audioBuffer = null;
   updateExportButtons();
-  exportStatus.textContent = "録音中です。停止後に音源を保存できます。";
+  if (exportStatus) exportStatus.textContent = "録音中です。停止後に音源を保存できます。";
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     statusEl.textContent = "このブラウザでは録音機能が使えません。Chrome / Edge / Safariの最新版で試してください。";
@@ -1367,7 +1367,9 @@ function updateResultButtons() {
   const hasResult = segments.length > 0;
 
   if (saveImageButton) saveImageButton.disabled = !hasResult;
-  if (downloadSynthWavButton) downloadSynthWavButton.disabled = !hasResult;
+  // ドレミ音WAV保存ボタンは常に押せる状態にします。
+  // 解析結果がない場合は、保存処理内で理由を表示します。
+  if (downloadSynthWavButton) downloadSynthWavButton.disabled = false;
   if (playSynthButton) playSynthButton.disabled = !hasResult || isSynthPlaying;
   if (stopSynthButton) stopSynthButton.disabled = !isSynthPlaying;
 }

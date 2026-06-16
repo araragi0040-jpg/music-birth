@@ -604,3 +604,21 @@ button.save-image:not(:disabled):hover {
     grid-template-columns: 1fr;
   }
 }
+
+
+.export-tools button.secondary {
+  background: #fff;
+  color: var(--accent-dark);
+  border: 1px solid #e6c8a7;
+  opacity: 1;
+}
+
+.export-tools button.secondary.is-processing {
+  opacity: 0.62;
+  cursor: progress;
+}
+
+.export-tools button.secondary:disabled {
+  opacity: 1;
+  cursor: pointer;
+}
