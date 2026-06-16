@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ドレミバー v009</title>
+  <title>ドレミバー v011</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -14,7 +14,7 @@
         <h1>ドレミバー</h1>
         <p class="lead">
           鼻歌や歌声の音程を、カラオケの音程バーのように見える化します。
-          v009では、音程バーの横スクロール／全体表示切替と、スマホでも聞こえやすいドレミ音再生に調整しました。
+          v011では、ドレミ音をキーボード風の音色に近づけ、解析されたドレミ音もWAV保存できるようにしました。
         </p>
       </div>
     </header>
@@ -135,6 +135,20 @@
         <div id="status" class="status">音源を選択するか、録音してください。</div>
 
         <audio id="audio" controls></audio>
+
+        <div class="export-panel">
+          <h3>録音音源の書き出し</h3>
+          <p>
+            録音した声そのものを保存できます。作曲アプリに入れる場合は、互換性の高いWAV保存がおすすめです。
+          </p>
+          <div class="export-tools">
+            <button id="downloadOriginalButton" class="secondary" disabled>元の音源を保存</button>
+            <button id="downloadWavButton" class="secondary" disabled>録音音源をWAV保存</button>
+          </div>
+          <div id="exportStatus" class="export-status">
+            録音または音源読み込み後に保存できます。
+          </div>
+        </div>
       </section>
 
       <section class="panel result-panel">
@@ -163,17 +177,39 @@
 
         <div class="sound-setting">
           <label>
-            ドレミ音量
-            <select id="synthVolume">
-              <option value="1.4">標準</option>
-              <option value="2.4">大きめ</option>
-              <option value="3.4" selected>最大（スマホ向け）</option>
+            ドレミ音色
+            <select id="synthTone">
+              <option value="keyboard" selected>キーボード風（おすすめ）</option>
+              <option value="bright">明るめ</option>
+              <option value="simple">シンプル</option>
             </select>
           </label>
-          <p>スマホスピーカーでも聞こえやすいよう、明るい音色と倍音を足して再生します。</p>
+
+          <label>
+            ドレミ音量
+            <select id="synthVolume">
+              <option value="1.2">標準</option>
+              <option value="1.9">大きめ</option>
+              <option value="2.6" selected>最大（スマホ向け）</option>
+            </select>
+          </label>
+          <p>キーボード風は、ピアノほどリアルではありませんが、電子音よりも柔らかく減衰する音色です。</p>
         </div>
 
         <button id="saveImageButton" class="save-image" disabled>音程バーを画像保存</button>
+
+        <div class="export-panel synth-export-panel">
+          <h3>ドレミ音の書き出し</h3>
+          <p>
+            解析された音程バーを、現在選択しているドレミ音色でWAV保存できます。
+          </p>
+          <div class="export-tools">
+            <button id="downloadSynthWavButton" class="secondary" disabled>ドレミ音をWAV保存</button>
+          </div>
+          <div id="synthExportStatus" class="export-status">
+            解析後に保存できます。
+          </div>
+        </div>
 
         <div class="segment-flow">
           <div class="segment-flow-head">
@@ -202,6 +238,8 @@
           <li>音程バーは、基本は横スクロールで見るのがおすすめです。</li>
           <li>全体をざっくり見たい時は「音程バー表示：全体表示」に切り替えられます。</li>
           <li>スマホでは、音程バーの下にある「音の流れ」も見ると確認しやすいです。</li>
+          <li>録音した音源は、そのまま保存したりWAVで保存したりできます。</li>
+          <li>解析されたドレミ音も、キーボード風のWAVとして保存できます。</li>
           <li>伴奏入り音源や複数の音が同時に鳴る音源は、正確に読めないことがあります。</li>
           <li>歌声は自然に揺れるため、細かいズレは気にしすぎなくて大丈夫です。</li>
           <li>「固定ド」表示なので、C=ド、D=レ、E=ミとして表示します。</li>

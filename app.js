@@ -19,6 +19,12 @@ const stopSynthButton = document.getElementById("stopSynthButton");
 const segmentList = document.getElementById("segmentList");
 const chartDisplayMode = document.getElementById("chartDisplayMode");
 const synthVolume = document.getElementById("synthVolume");
+const synthTone = document.getElementById("synthTone");
+const downloadOriginalButton = document.getElementById("downloadOriginalButton");
+const downloadWavButton = document.getElementById("downloadWavButton");
+const exportStatus = document.getElementById("exportStatus");
+const downloadSynthWavButton = document.getElementById("downloadSynthWavButton");
+const synthExportStatus = document.getElementById("synthExportStatus");
 
 const recordStartButton = document.getElementById("recordStartButton");
 const recordStopButton = document.getElementById("recordStopButton");
@@ -29,6 +35,9 @@ const recordDot = document.getElementById("recordDot");
 let audioContext = null;
 let audioBuffer = null;
 let audioObjectUrl = null;
+let currentAudioBlob = null;
+let currentAudioLabel = "";
+let currentSourceKind = "";
 let frames = [];
 let segments = [];
 let drawState = null;
@@ -49,8 +58,7 @@ let recordingTimerId = null;
 
 const NOTE_NAMES = ["ド", "ド#", "レ", "レ#", "ミ", "ファ", "ファ#", "ソ", "ソ#", "ラ", "ラ#", "シ"];
 const MOBILE_BREAKPOINT = 760;
-const SYNTH_FUNDAMENTAL_GAIN = 0.34;
-const SYNTH_HARMONIC_GAIN = 0.16;
+const SYNTH_SAMPLE_RATE = 44100;
 
 fileInput.addEventListener("change", async (event) => {
   const file = event.target.files?.[0];
@@ -61,6 +69,7 @@ fileInput.addEventListener("change", async (event) => {
     label: file.name,
     sourceLabel: "ファイル音源",
     status: "音源を読み込み中です。",
+    kind: "file",
   });
 });
 
@@ -94,6 +103,7 @@ analyzeButton.addEventListener("click", async () => {
     }
 
     statusEl.textContent = "解析が完了しました。スマホでは下の「音の流れ」も確認できます。";
+    if (synthExportStatus) synthExportStatus.textContent = "解析されたドレミ音をWAV保存できます。";
     updateSummary(result);
     renderSegmentList();
     drawPitchBars();
@@ -172,6 +182,9 @@ chartDisplayMode.addEventListener("change", () => {
 saveImageButton.addEventListener("click", savePitchImage);
 playSynthButton.addEventListener("click", playSynthFromBars);
 stopSynthButton.addEventListener("click", () => stopSynthPlayback());
+downloadOriginalButton.addEventListener("click", downloadOriginalAudio);
+downloadWavButton.addEventListener("click", downloadWavAudio);
+downloadSynthWavButton.addEventListener("click", downloadSynthWavAudio);
 
 
 
@@ -235,13 +248,205 @@ function markCustomPreset() {
   }
 }
 
+function updateExportButtons() {
+  const hasBlob = !!currentAudioBlob;
+  const hasBuffer = !!audioBuffer;
+
+  if (downloadOriginalButton) downloadOriginalButton.disabled = !hasBlob;
+  if (downloadWavButton) downloadWavButton.disabled = !hasBuffer;
+}
+
+async function downloadSynthWavAudio() {
+  if (!segments.length) {
+    synthExportStatus.textContent = "保存できるドレミ音がありません。先に解析してください。";
+    return;
+  }
+
+  try {
+    downloadSynthWavButton.disabled = true;
+    synthExportStatus.textContent = "ドレミ音のWAVを作成中です。";
+
+    const wavBlob = await renderSynthSegmentsToWavBlob();
+    const filename = `doremi_keyboard_${timestampForFile()}.wav`;
+
+    downloadBlob(wavBlob, filename);
+    synthExportStatus.textContent = `ドレミ音をWAV保存しました：${filename}`;
+  } catch (error) {
+    console.error(error);
+    synthExportStatus.textContent = "ドレミ音のWAV保存中にエラーが起きました。短めの音源で再度試してください。";
+  } finally {
+    updateResultButtons();
+  }
+}
+
+async function renderSynthSegmentsToWavBlob() {
+  const lastEnd = Math.max(...segments.map((seg) => seg.end));
+  const duration = Math.max(0.5, lastEnd + 0.45);
+  const length = Math.ceil(duration * SYNTH_SAMPLE_RATE);
+  const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+
+  if (!OfflineCtx) {
+    throw new Error("OfflineAudioContext is not supported.");
+  }
+
+  const offline = new OfflineCtx(2, length, SYNTH_SAMPLE_RATE);
+  const masterGain = offline.createGain();
+  const compressor = offline.createDynamicsCompressor();
+  const volumeMultiplier = Number(synthVolume?.value || 2.6);
+
+  masterGain.gain.setValueAtTime(volumeMultiplier, 0);
+  compressor.threshold.setValueAtTime(-12, 0);
+  compressor.knee.setValueAtTime(18, 0);
+  compressor.ratio.setValueAtTime(7, 0);
+  compressor.attack.setValueAtTime(0.006, 0);
+  compressor.release.setValueAtTime(0.22, 0);
+
+  masterGain.connect(compressor);
+  compressor.connect(offline.destination);
+
+  const temporaryNodes = [];
+  for (const seg of segments) {
+    const start = Math.max(0, seg.start);
+    const end = Math.max(seg.start + 0.05, seg.end);
+    scheduleKeyboardNote(offline, masterGain, seg.midi, start, end, synthTone?.value || "keyboard", temporaryNodes);
+  }
+
+  const rendered = await offline.startRendering();
+  return audioBufferToWavBlob(rendered);
+}
+
+function downloadOriginalAudio() {
+  if (!currentAudioBlob) {
+    exportStatus.textContent = "保存できる音源がありません。先に録音または音源読み込みをしてください。";
+    return;
+  }
+
+  const extension = extensionFromMime(currentAudioBlob.type) || extensionFromName(currentAudioLabel) || "webm";
+  const baseName = currentSourceKind === "recording" ? "doremi_recording" : cleanFileBaseName(currentAudioLabel || "doremi_audio");
+  const filename = `${baseName}_${timestampForFile()}.${extension}`;
+
+  downloadBlob(currentAudioBlob, filename);
+  exportStatus.textContent = `元の音源を保存しました：${filename}`;
+}
+
+function downloadWavAudio() {
+  if (!audioBuffer) {
+    exportStatus.textContent = "WAV保存できる音源がありません。先に録音または音源読み込みをしてください。";
+    return;
+  }
+
+  try {
+    const wavBlob = audioBufferToWavBlob(audioBuffer);
+    const baseName = currentSourceKind === "recording" ? "doremi_recording" : cleanFileBaseName(currentAudioLabel || "doremi_audio");
+    const filename = `${baseName}_${timestampForFile()}.wav`;
+
+    downloadBlob(wavBlob, filename);
+    exportStatus.textContent = `WAVで保存しました：${filename}`;
+  } catch (error) {
+    console.error(error);
+    exportStatus.textContent = "WAV保存中にエラーが起きました。短めの音源で再度試してください。";
+  }
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function audioBufferToWavBlob(buffer) {
+  const numberOfChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const length = buffer.length;
+  const bytesPerSample = 2;
+  const blockAlign = numberOfChannels * bytesPerSample;
+  const dataSize = length * blockAlign;
+  const arrayBuffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(arrayBuffer);
+
+  writeString(view, 0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(view, 8, "WAVE");
+  writeString(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numberOfChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bytesPerSample * 8, true);
+  writeString(view, 36, "data");
+  view.setUint32(40, dataSize, true);
+
+  let offset = 44;
+  for (let i = 0; i < length; i++) {
+    for (let ch = 0; ch < numberOfChannels; ch++) {
+      const sample = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
+      const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+      view.setInt16(offset, intSample, true);
+      offset += 2;
+    }
+  }
+
+  return new Blob([arrayBuffer], { type: "audio/wav" });
+}
+
+function writeString(view, offset, string) {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
+  }
+}
+
+function extensionFromMime(mimeType) {
+  const mime = (mimeType || "").toLowerCase();
+
+  if (mime.includes("wav")) return "wav";
+  if (mime.includes("mpeg") || mime.includes("mp3")) return "mp3";
+  if (mime.includes("mp4") || mime.includes("aac") || mime.includes("m4a")) return "m4a";
+  if (mime.includes("ogg")) return "ogg";
+  if (mime.includes("webm")) return "webm";
+
+  return "";
+}
+
+function extensionFromName(name) {
+  const match = String(name || "").match(/\.([a-zA-Z0-9]+)$/);
+  return match ? match[1].toLowerCase() : "";
+}
+
+function cleanFileBaseName(name) {
+  const withoutExt = String(name || "doremi_audio").replace(/\.[^/.]+$/, "");
+  return withoutExt
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 60) || "doremi_audio";
+}
+
+function timestampForFile() {
+  return new Date()
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\..+/, "")
+    .replace("T", "_");
+}
+
 async function loadAudioBlob(blob, options = {}) {
   resetResult();
 
   const label = options.label || "音源";
   const sourceLabel = options.sourceLabel || "音源";
+  currentAudioBlob = blob;
+  currentAudioLabel = label;
+  currentSourceKind = options.kind || "audio";
   fileLabel.textContent = label;
   statusEl.textContent = options.status || "音源を読み込み中です。";
+  updateExportButtons();
 
   if (audioObjectUrl) URL.revokeObjectURL(audioObjectUrl);
   audioObjectUrl = URL.createObjectURL(blob);
@@ -256,15 +461,29 @@ async function loadAudioBlob(blob, options = {}) {
     const duration = audioBuffer.duration;
     analyzeButton.disabled = false;
     statusEl.textContent = `${sourceLabel}の読み込み完了：${formatTime(duration)}。解析できます。`;
+    exportStatus.textContent = `${sourceLabel}を保存できます。作曲アプリ用にはWAV保存がおすすめです。`;
+    updateExportButtons();
   } catch (error) {
     console.error(error);
     audioBuffer = null;
+    currentAudioBlob = null;
+    currentAudioLabel = "";
+    currentSourceKind = "";
     analyzeButton.disabled = true;
     statusEl.textContent = "音源を読み込めませんでした。別の形式のファイルで試してください。";
+    exportStatus.textContent = "音源を読み込めなかったため、保存できません。";
+    updateExportButtons();
   }
 }
 
 async function startRecording() {
+  currentAudioBlob = null;
+  currentAudioLabel = "";
+  currentSourceKind = "";
+  audioBuffer = null;
+  updateExportButtons();
+  exportStatus.textContent = "録音中です。停止後に音源を保存できます。";
+
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     statusEl.textContent = "このブラウザでは録音機能が使えません。Chrome / Edge / Safariの最新版で試してください。";
     return;
@@ -316,6 +535,7 @@ async function startRecording() {
         label: "録音した音源",
         sourceLabel: "録音音源",
         status: "録音音源を読み込み中です。",
+        kind: "recording",
       });
     });
 
@@ -401,6 +621,7 @@ function resetResult() {
   summaryEl.textContent = "解析結果はここに表示されます。";
   selectedInfo.textContent = "バーをクリックすると、音名と時間が表示されます。";
   if (segmentList) segmentList.textContent = "解析後に、音の流れがここに表示されます。";
+  if (synthExportStatus) synthExportStatus.textContent = "解析後に保存できます。";
   updateResultButtons();
   clearCanvas();
 }
@@ -1014,6 +1235,7 @@ function updateResultButtons() {
   const hasResult = segments.length > 0;
 
   if (saveImageButton) saveImageButton.disabled = !hasResult;
+  if (downloadSynthWavButton) downloadSynthWavButton.disabled = !hasResult;
   if (playSynthButton) playSynthButton.disabled = !hasResult || isSynthPlaying;
   if (stopSynthButton) stopSynthButton.disabled = !isSynthPlaying;
 }
@@ -1041,16 +1263,15 @@ async function playSynthFromBars() {
     isSynthPlaying = true;
     synthNodes = [];
 
-    const volumeMultiplier = Number(synthVolume?.value || 3.4);
-
+    const volumeMultiplier = Number(synthVolume?.value || 2.6);
     const masterGain = audioContext.createGain();
     const compressor = audioContext.createDynamicsCompressor();
 
-    compressor.threshold.setValueAtTime(-14, startAt);
-    compressor.knee.setValueAtTime(16, startAt);
-    compressor.ratio.setValueAtTime(8, startAt);
-    compressor.attack.setValueAtTime(0.004, startAt);
-    compressor.release.setValueAtTime(0.18, startAt);
+    compressor.threshold.setValueAtTime(-12, startAt);
+    compressor.knee.setValueAtTime(18, startAt);
+    compressor.ratio.setValueAtTime(7, startAt);
+    compressor.attack.setValueAtTime(0.006, startAt);
+    compressor.release.setValueAtTime(0.22, startAt);
 
     masterGain.gain.setValueAtTime(volumeMultiplier, startAt);
     masterGain.connect(compressor);
@@ -1059,53 +1280,16 @@ async function playSynthFromBars() {
 
     for (const seg of segments) {
       const start = startAt + Math.max(0, seg.start);
-      const end = startAt + Math.max(seg.start + 0.04, seg.end);
-      const duration = end - start;
-
-      if (duration <= 0.03) continue;
-
-      const frequency = midiToFrequency(seg.midi);
-
-      const osc = audioContext.createOscillator();
-      const harmonicOsc = audioContext.createOscillator();
-      const gain = audioContext.createGain();
-      const harmonicGain = audioContext.createGain();
-
-      // スマホスピーカーでも聞こえやすいように、正弦波より明るい三角波＋小さな倍音を足します。
-      osc.type = "triangle";
-      harmonicOsc.type = "sine";
-      osc.frequency.setValueAtTime(frequency, start);
-      harmonicOsc.frequency.setValueAtTime(frequency * 2, start);
-
-      gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(SYNTH_FUNDAMENTAL_GAIN, start + 0.015);
-      gain.gain.setValueAtTime(SYNTH_FUNDAMENTAL_GAIN, Math.max(start + 0.02, end - 0.035));
-      gain.gain.linearRampToValueAtTime(0, end);
-
-      harmonicGain.gain.setValueAtTime(0, start);
-      harmonicGain.gain.linearRampToValueAtTime(SYNTH_HARMONIC_GAIN, start + 0.015);
-      harmonicGain.gain.setValueAtTime(SYNTH_HARMONIC_GAIN, Math.max(start + 0.02, end - 0.035));
-      harmonicGain.gain.linearRampToValueAtTime(0, end);
-
-      osc.connect(gain);
-      harmonicOsc.connect(harmonicGain);
-      gain.connect(masterGain);
-      harmonicGain.connect(masterGain);
-
-      osc.start(start);
-      harmonicOsc.start(start);
-      osc.stop(end + 0.04);
-      harmonicOsc.stop(end + 0.04);
-
-      synthNodes.push(osc, harmonicOsc, gain, harmonicGain);
+      const end = startAt + Math.max(seg.start + 0.05, seg.end);
+      scheduleKeyboardNote(audioContext, masterGain, seg.midi, start, end, synthTone?.value || "keyboard", synthNodes);
     }
 
     updateResultButtons();
-    statusEl.textContent = "解析したバーをドレミ音で再生中です。音が大きすぎる場合はドレミ音量を下げてください。";
-    selectedInfo.textContent = "ドレミ音で再生中です。スマホでも聞こえやすいよう、明るい音色で鳴らしています。";
+    statusEl.textContent = "解析したバーをキーボード風のドレミ音で再生中です。";
+    selectedInfo.textContent = "ドレミ音で再生中です。電子音よりも柔らかく減衰するキーボード風の音色にしています。";
     startPlayhead();
 
-    const finishAfterMs = Math.max(100, (synthDuration + 0.22) * 1000);
+    const finishAfterMs = Math.max(100, (synthDuration + 0.35) * 1000);
     synthEndTimer = setTimeout(() => {
       finishSynthPlayback();
     }, finishAfterMs);
@@ -1114,6 +1298,97 @@ async function playSynthFromBars() {
     stopSynthPlayback({ silent: true });
     statusEl.textContent = "ドレミ音の再生中にエラーが起きました。ブラウザの音声再生許可を確認してください。";
   }
+}
+
+function scheduleKeyboardNote(context, destination, midi, start, end, tone, nodeStore) {
+  const freq = midiToFrequency(midi);
+  const duration = Math.max(0.06, end - start);
+  const releaseEnd = end + 0.16;
+  const toneConfig = getToneConfig(tone);
+
+  toneConfig.partials.forEach((partial) => {
+    const osc = context.createOscillator();
+    const gain = context.createGain();
+    const filter = context.createBiquadFilter();
+
+    osc.type = partial.type;
+    osc.frequency.setValueAtTime(freq * partial.ratio, start);
+
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(toneConfig.filterStart, start);
+    filter.frequency.exponentialRampToValueAtTime(toneConfig.filterEnd, releaseEnd);
+    filter.Q.setValueAtTime(toneConfig.filterQ, start);
+
+    const peak = partial.gain * toneConfig.gain;
+    const sustain = peak * toneConfig.sustain;
+
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), start + toneConfig.attack);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, sustain), start + Math.min(duration * 0.7, toneConfig.decay));
+    gain.gain.setValueAtTime(Math.max(0.0002, sustain), Math.max(start + toneConfig.attack, end - 0.03));
+    gain.gain.exponentialRampToValueAtTime(0.0001, releaseEnd);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(destination);
+
+    osc.start(start);
+    osc.stop(releaseEnd + 0.02);
+
+    nodeStore.push(osc, gain, filter);
+  });
+}
+
+function getToneConfig(tone) {
+  if (tone === "simple") {
+    return {
+      gain: 0.22,
+      attack: 0.01,
+      decay: 0.18,
+      sustain: 0.72,
+      filterStart: 2600,
+      filterEnd: 1800,
+      filterQ: 0.4,
+      partials: [
+        { ratio: 1, gain: 1.0, type: "triangle" },
+        { ratio: 2, gain: 0.18, type: "sine" },
+      ],
+    };
+  }
+
+  if (tone === "bright") {
+    return {
+      gain: 0.25,
+      attack: 0.006,
+      decay: 0.32,
+      sustain: 0.52,
+      filterStart: 5200,
+      filterEnd: 2600,
+      filterQ: 0.55,
+      partials: [
+        { ratio: 1, gain: 1.0, type: "triangle" },
+        { ratio: 2, gain: 0.34, type: "sine" },
+        { ratio: 3, gain: 0.13, type: "sine" },
+        { ratio: 4, gain: 0.07, type: "sine" },
+      ],
+    };
+  }
+
+  return {
+    gain: 0.24,
+    attack: 0.008,
+    decay: 0.42,
+    sustain: 0.46,
+    filterStart: 4200,
+    filterEnd: 1700,
+    filterQ: 0.65,
+    partials: [
+      { ratio: 1, gain: 1.0, type: "triangle" },
+      { ratio: 2, gain: 0.28, type: "sine" },
+      { ratio: 3, gain: 0.11, type: "sine" },
+      { ratio: 5, gain: 0.04, type: "sine" },
+    ],
+  };
 }
 
 function finishSynthPlayback() {
@@ -1262,3 +1537,4 @@ function sleep(ms) {
 }
 
 clearCanvas();
+updateExportButtons();
