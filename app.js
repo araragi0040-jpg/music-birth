@@ -1061,6 +1061,53 @@ function createSegmentFromFrame(frame) {
   };
 }
 
+function getDisplayMidiRange(targetSegments) {
+  const midiValues = targetSegments
+    .map((seg) => seg.midi)
+    .filter((value) => Number.isFinite(value))
+    .sort((a, b) => a - b);
+
+  if (!midiValues.length) {
+    return { minMidi: 48, maxMidi: 72 };
+  }
+
+  // 解析ミスによる極端な外れ値があると、スマホで縦長になりすぎるため、
+  // 表示範囲だけは中央寄りの音域を優先します。解析データ自体は消しません。
+  const rawMin = midiValues[0];
+  const rawMax = midiValues[midiValues.length - 1];
+  let minMidi = rawMin;
+  let maxMidi = rawMax;
+
+  if (rawMax - rawMin > 28 && midiValues.length >= 8) {
+    minMidi = percentileValue(midiValues, 0.08);
+    maxMidi = percentileValue(midiValues, 0.92);
+  }
+
+  minMidi = Math.max(24, Math.floor(minMidi) - 2);
+  maxMidi = Math.min(96, Math.ceil(maxMidi) + 2);
+
+  // それでも広すぎる場合は、中央値を中心に最大約2オクターブ半に収めます。
+  if (maxMidi - minMidi > 30) {
+    const center = percentileValue(midiValues, 0.5);
+    minMidi = Math.max(24, Math.floor(center - 15));
+    maxMidi = Math.min(96, Math.ceil(center + 15));
+  }
+
+  if (maxMidi <= minMidi) {
+    maxMidi = minMidi + 4;
+  }
+
+  return { minMidi, maxMidi };
+}
+
+function percentileValue(sortedValues, ratio) {
+  const index = Math.min(
+    sortedValues.length - 1,
+    Math.max(0, Math.round((sortedValues.length - 1) * ratio))
+  );
+  return sortedValues[index];
+}
+
 function drawPitchBars() {
   if (!segments.length) {
     clearCanvas();
@@ -1070,8 +1117,9 @@ function drawPitchBars() {
   updateResultButtons();
 
   const duration = audioBuffer?.duration || segments[segments.length - 1].end || 1;
-  const minMidi = Math.max(24, Math.min(...segments.map((s) => s.midi)) - 2);
-  const maxMidi = Math.min(96, Math.max(...segments.map((s) => s.midi)) + 2);
+  const displayRange = getDisplayMidiRange(segments);
+  const minMidi = displayRange.minMidi;
+  const maxMidi = displayRange.maxMidi;
   const rows = [];
 
   for (let midi = maxMidi; midi >= minMidi; midi--) {
@@ -1316,7 +1364,7 @@ function renderSegmentList() {
     return;
   }
 
-  const maxVisible = 60;
+  const maxVisible = window.innerWidth <= MOBILE_BREAKPOINT ? 28 : 60;
   const visibleSegments = segments.slice(0, maxVisible);
   const html = visibleSegments.map((seg, index) => {
     const note = escapeHtml(displayNoteName(seg.midi));

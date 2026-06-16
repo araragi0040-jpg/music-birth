@@ -622,3 +622,135 @@ button.save-image:not(:disabled):hover {
   opacity: 1;
   cursor: pointer;
 }
+
+
+/* v014: mobile layout guard */
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.app,
+main,
+.panel,
+.input-panel,
+.result-panel,
+.notes-panel {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.panel {
+  overflow: hidden;
+}
+
+.summary,
+.selected-info,
+.status,
+.export-status,
+.guide,
+.small-note,
+.segment-flow-head p,
+.export-panel p,
+.sound-setting p,
+.simple-setting p {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.canvas-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+#pitchCanvas {
+  max-width: none;
+}
+
+.segment-flow {
+  max-width: 100%;
+}
+
+.segment-list {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.segment-chip {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.segment-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .app {
+    width: 100%;
+    padding-left: 9px;
+    padding-right: 9px;
+  }
+
+  .hero,
+  .panel {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .simple-setting,
+  .settings,
+  .input-grid,
+  .record-controls,
+  .play-tools,
+  .export-tools,
+  .sound-setting {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .canvas-wrap {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .segment-list {
+    max-height: 220px;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+
+  .segment-chip {
+    flex: 1 1 calc(50% - 8px);
+    justify-content: flex-start;
+  }
+
+  .segment-chip strong {
+    flex: 0 0 auto;
+  }
+
+  .segment-chip span {
+    font-size: 12px;
+  }
+
+  audio {
+    max-width: 100%;
+  }
+
+  button {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .segment-chip {
+    flex-basis: 100%;
+  }
+}
