@@ -44,6 +44,15 @@ let drawState = null;
 let selectedSegment = null;
 let rafId = null;
 
+let pitchDragState = {
+  active: false,
+  pointerId: null,
+  segment: null,
+  originalMidi: null,
+  startClientY: 0,
+  changed: false,
+};
+
 let synthNodes = [];
 let synthEndTimer = null;
 let synthStartAudioTime = null;
@@ -122,26 +131,170 @@ audioEl.addEventListener("play", () => {
 audioEl.addEventListener("pause", stopPlayhead);
 audioEl.addEventListener("ended", stopPlayhead);
 
-canvas.addEventListener("click", (event) => {
+canvas.addEventListener("pointerdown", handlePitchPointerDown);
+canvas.addEventListener("pointermove", handlePitchPointerMove);
+canvas.addEventListener("pointerup", handlePitchPointerUp);
+canvas.addEventListener("pointercancel", handlePitchPointerCancel);
+
+function handlePitchPointerDown(event) {
   if (!drawState || segments.length === 0) return;
 
-  const rect = canvas.getBoundingClientRect();
-  const x = (event.clientX - rect.left) * (canvas.width / rect.width);
-  const y = (event.clientY - rect.top) * (canvas.height / rect.height);
-
-  const seg = hitTestSegment(x, y);
+  const point = canvasEventToLogicalPoint(event);
+  const seg = hitTestSegment(point.x, point.y);
   if (!seg) return;
 
   stopSynthPlayback({ silent: true });
+  if (!audioEl.paused) audioEl.pause();
+
   selectedSegment = seg;
-  audioEl.currentTime = Math.max(0, seg.start);
+  pitchDragState = {
+    active: true,
+    pointerId: event.pointerId,
+    segment: seg,
+    originalMidi: seg.midi,
+    startClientY: event.clientY,
+    changed: false,
+  };
+
+  canvas.classList.add("is-dragging");
+
+  try {
+    canvas.setPointerCapture(event.pointerId);
+  } catch (error) {
+    // 一部ブラウザでは利用できないため無視します。
+  }
+
+  selectedInfo.innerHTML = `
+    <strong>${displayNoteName(seg.midi)}</strong>
+    ／ 上下にドラッグして高さを変更
+  `;
+  renderCanvas();
+}
+
+function handlePitchPointerMove(event) {
+  if (!pitchDragState.active || event.pointerId !== pitchDragState.pointerId || !drawState) {
+    return;
+  }
+
+  const rect = canvas.getBoundingClientRect();
+  const logicalScaleY = drawState.height / Math.max(1, rect.height);
+  const logicalDeltaY = (pitchDragState.startClientY - event.clientY) * logicalScaleY;
+
+  if (Math.abs(logicalDeltaY) < 4) return;
+
+  event.preventDefault();
+
+  const semitoneDelta = Math.round(logicalDeltaY / drawState.rowHeight);
+  const nextMidi = clampMidi(pitchDragState.originalMidi + semitoneDelta);
+  const seg = pitchDragState.segment;
+
+  if (!seg || nextMidi === seg.midi) return;
+
+  seg.midi = nextMidi;
+  seg.noteName = midiToNoteName(nextMidi);
+  seg.freq = midiToFrequency(nextMidi);
+  pitchDragState.changed = true;
+
   selectedInfo.innerHTML = `
     <strong>${displayNoteName(seg.midi)}</strong>
     ／ ${formatTime(seg.start)} 〜 ${formatTime(seg.end)}
-    ／ 約${seg.freq.toFixed(1)}Hz
+    ／ 高さを編集中
   `;
-  drawPitchBars();
-});
+
+  if (!drawState.rows.includes(nextMidi)) {
+    drawPitchBars();
+  } else {
+    renderCanvas();
+  }
+}
+
+function handlePitchPointerUp(event) {
+  if (!pitchDragState.active || event.pointerId !== pitchDragState.pointerId) return;
+  finishPitchPointerInteraction(event, false);
+}
+
+function handlePitchPointerCancel(event) {
+  if (!pitchDragState.active || event.pointerId !== pitchDragState.pointerId) return;
+  finishPitchPointerInteraction(event, true);
+}
+
+function finishPitchPointerInteraction(event, cancelled) {
+  const seg = pitchDragState.segment;
+  const changed = pitchDragState.changed;
+  const originalMidi = pitchDragState.originalMidi;
+
+  try {
+    canvas.releasePointerCapture(event.pointerId);
+  } catch (error) {
+    // ポインターキャプチャがない場合は無視します。
+  }
+
+  canvas.classList.remove("is-dragging");
+
+  if (!seg) {
+    resetPitchDragState();
+    return;
+  }
+
+  if (cancelled && changed) {
+    seg.midi = originalMidi;
+    seg.noteName = midiToNoteName(seg.midi);
+    seg.freq = midiToFrequency(seg.midi);
+  }
+
+  if (changed && !cancelled) {
+    selectedSegment = seg;
+    updateSummary({ segments });
+    renderSegmentList();
+    drawPitchBars();
+
+    statusEl.textContent = `バーの高さを「${displayNoteName(seg.midi)}」に変更しました。`;
+    selectedInfo.innerHTML = `
+      <strong>${displayNoteName(seg.midi)}</strong>
+      ／ ${formatTime(seg.start)} 〜 ${formatTime(seg.end)}
+      ／ 約${seg.freq.toFixed(1)}Hz
+    `;
+
+    if (synthExportStatus) {
+      synthExportStatus.textContent = "編集後のドレミ音をWAV保存できます。";
+    }
+  } else {
+    selectedSegment = seg;
+    audioEl.currentTime = Math.max(0, seg.start);
+    selectedInfo.innerHTML = `
+      <strong>${displayNoteName(seg.midi)}</strong>
+      ／ ${formatTime(seg.start)} 〜 ${formatTime(seg.end)}
+      ／ 約${seg.freq.toFixed(1)}Hz
+    `;
+    renderCanvas();
+  }
+
+  resetPitchDragState();
+}
+
+function resetPitchDragState() {
+  pitchDragState = {
+    active: false,
+    pointerId: null,
+    segment: null,
+    originalMidi: null,
+    startClientY: 0,
+    changed: false,
+  };
+}
+
+function canvasEventToLogicalPoint(event) {
+  const rect = canvas.getBoundingClientRect();
+
+  return {
+    x: (event.clientX - rect.left) * (drawState.width / Math.max(1, rect.width)),
+    y: (event.clientY - rect.top) * (drawState.height / Math.max(1, rect.height)),
+  };
+}
+
+function clampMidi(midi) {
+  return Math.max(24, Math.min(96, Math.round(midi)));
+}
 
 window.addEventListener("resize", () => {
   if (segments.length > 0) drawPitchBars();
@@ -750,8 +903,10 @@ function resetResult() {
   segments = [];
   drawState = null;
   selectedSegment = null;
+  resetPitchDragState();
+  canvas.classList.remove("is-dragging");
   summaryEl.textContent = "解析結果はここに表示されます。";
-  selectedInfo.textContent = "バーをクリックすると、音名と時間が表示されます。";
+  selectedInfo.textContent = "バーをタップすると選択、上下にドラッグすると音の高さを変更できます。";
   if (segmentList) segmentList.textContent = "解析後に、音の流れがここに表示されます。";
   if (synthExportStatus) synthExportStatus.textContent = "解析後に保存できます。";
   updateResultButtons();
@@ -1303,6 +1458,12 @@ function drawBars(s) {
     ctx.fillStyle = isSelected ? "#d4661f" : "#ef8f35";
     roundedRect(ctx, x, y, w, h, 7);
     ctx.fill();
+
+    if (isSelected) {
+      ctx.strokeStyle = pitchDragState.active ? "#7f3b13" : "#a84d16";
+      ctx.lineWidth = pitchDragState.active ? 3 : 2;
+      ctx.stroke();
+    }
 
     if (w > (s.isFitMode ? 42 : 34)) {
       ctx.fillStyle = "rgba(255, 255, 255, 0.95)";

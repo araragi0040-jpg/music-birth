@@ -1,7 +1,7 @@
 {
   "name": "doremi-bar",
-  "version": "0.15.0",
-  "description": "鼻歌・歌声の単音を可視化し、解析後もスマホ初期UI幅を保つブラウザアプリ",
+  "version": "0.16.0",
+  "description": "鼻歌・歌声を音程バー化し、解析後のバーを上下ドラッグで編集できるブラウザアプリ",
   "type": "module",
   "private": true
 }

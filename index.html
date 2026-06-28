@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ドレミバー v015</title>
+  <title>ドレミバー v016</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -14,7 +14,7 @@
         <h1>ドレミバー</h1>
         <p class="lead">
           鼻歌や歌声の音程を、カラオケの音程バーのように見える化します。
-          v015では、解析後も最初の画面幅を保つように、音程バーだけを固定枠内で横スクロールする構造に修正しました。
+          v016では、解析後の音程バーを上下にドラッグして、音の高さだけを編集できるようにしました。
         </p>
       </div>
     </header>
@@ -159,12 +159,19 @@
 
         <div class="guide">
           <p><strong>左のドレミ</strong>が音の高さです。右に進むほど時間が進みます。</p>
-          <p>バーをクリックすると、その音の位置から再生できます。</p>
+          <p>バーをタップすると、その音の位置を選択できます。</p>
+          <p><strong>バーを上下にドラッグ</strong>すると、長さを変えずに音の高さだけを編集できます。</p>
           <p>スマホで横に長い場合は、ページ全体ではなく、音程バー枠の中だけが横スクロールします。</p>
         </div>
 
         <div id="summary" class="summary">
           解析結果はここに表示されます。
+        </div>
+
+        <div class="edit-guide">
+          <strong>高さを直す：</strong>
+          オレンジ色のバーを押したまま、上または下へ動かしてください。
+          編集後の高さは、ドレミ音再生とWAV保存にも反映されます。
         </div>
 
         <div class="canvas-wrap">
