@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ドレミバー v017</title>
+  <title>ドレミバー v018</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -14,7 +14,7 @@
         <h1>ドレミバー</h1>
         <p class="lead">
           鼻歌や歌声の音程を、カラオケの音程バーのように見える化します。
-          v017では、Spotify Basic Pitchによる高精度解析を追加しました。従来解析も予備として残しています。
+          v018では、音声ファイルを選択できない問題を修正しました。Basic Pitch高精度解析と従来解析の両方を利用できます。
         </p>
       </div>
     </header>
@@ -31,10 +31,19 @@
             <h3>ファイルから読み込む</h3>
             <p>すでに録音済みの音声ファイルを使います。</p>
 
-            <label class="file-box">
-              <input id="fileInput" type="file" accept="audio/*" />
-              <span id="fileLabel">音声ファイルを選択</span>
-            </label>
+            <div class="file-picker">
+              <input
+                id="fileInput"
+                class="file-input"
+                type="file"
+                accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.oga,.webm,.mp4"
+                aria-label="音声ファイルを選択"
+              />
+              <div class="file-box" aria-hidden="true">
+                <span id="fileLabel">音声ファイルを選択</span>
+                <small>MP3 / WAV / M4A / AAC / OGG / WebM など</small>
+              </div>
+            </div>
           </div>
 
           <div class="input-card">

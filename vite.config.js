@@ -1,8 +1,6 @@
-import { defineConfig } from "vite";
-
-export default defineConfig({
-  base: "./",
+export default {
+  base: './',
   build: {
-    target: "es2020",
+    target: 'es2020',
   },
-});
+};

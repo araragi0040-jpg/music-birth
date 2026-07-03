@@ -1,7 +1,7 @@
 {
   "name": "doremi-bar",
-  "version": "0.17.0",
-  "description": "Basic Pitch高精度解析と音程バー編集に対応した鼻歌可視化アプリ",
+  "version": "0.18.0",
+  "description": "Basic Pitch高精度解析と、スマホ対応の音声ファイル選択・音程バー編集を備えた鼻歌可視化アプリ",
   "type": "module",
   "private": true,
   "scripts": {
