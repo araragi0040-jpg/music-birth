@@ -1,7 +1,18 @@
 {
   "name": "doremi-bar",
-  "version": "0.16.0",
-  "description": "鼻歌・歌声を音程バー化し、解析後のバーを上下ドラッグで編集できるブラウザアプリ",
+  "version": "0.17.0",
+  "description": "Basic Pitch高精度解析と音程バー編集に対応した鼻歌可視化アプリ",
   "type": "module",
-  "private": true
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@spotify/basic-pitch": "1.0.1"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0"
+  }
 }

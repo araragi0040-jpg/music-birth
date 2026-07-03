@@ -1,3 +1,10 @@
+import {
+  BasicPitch,
+  addPitchBendsToNoteEvents,
+  noteFramesToTime,
+  outputToNotesPoly,
+} from "@spotify/basic-pitch";
+
 const fileInput = document.getElementById("fileInput");
 const fileLabel = document.getElementById("fileLabel");
 const analyzeButton = document.getElementById("analyzeButton");
@@ -12,6 +19,7 @@ const detailSelect = document.getElementById("detailSelect");
 const sensitivitySelect = document.getElementById("sensitivitySelect");
 const zoomSelect = document.getElementById("zoomSelect");
 const analysisPreset = document.getElementById("analysisPreset");
+const analysisEngine = document.getElementById("analysisEngine");
 const noteDisplayMode = document.getElementById("noteDisplayMode");
 const saveImageButton = document.getElementById("saveImageButton");
 const playSynthButton = document.getElementById("playSynthButton");
@@ -65,6 +73,13 @@ let recordingStream = null;
 let recordingStartAt = 0;
 let recordingTimerId = null;
 
+let basicPitchInstance = null;
+let basicPitchModelPromise = null;
+let lastAnalysisEngineLabel = "";
+
+const BASIC_PITCH_SAMPLE_RATE = 22050;
+const BASIC_PITCH_MODEL_URL = new URL("./model/model.json", window.location.href).href;
+
 const NOTE_NAMES = ["ド", "ド#", "レ", "レ#", "ミ", "ファ", "ファ#", "ソ", "ソ#", "ラ", "ラ#", "シ"];
 const MOBILE_BREAKPOINT = 760;
 const SYNTH_SAMPLE_RATE = 44100;
@@ -94,10 +109,29 @@ analyzeButton.addEventListener("click", async () => {
   statusEl.textContent = "解析を開始します。";
 
   try {
-    const result = await analyzePitch(audioBuffer, {
-      detail: detailSelect.value,
-      sensitivity: sensitivitySelect.value,
-    });
+    let result;
+
+    if (analysisEngine?.value === "basicPitch") {
+      try {
+        statusEl.textContent = "Basic Pitchを準備しています。初回は少し時間がかかります。";
+        result = await analyzeWithBasicPitch(audioBuffer);
+        lastAnalysisEngineLabel = "Basic Pitch高精度解析";
+      } catch (basicPitchError) {
+        console.error("Basic Pitch analysis failed. Falling back.", basicPitchError);
+        statusEl.textContent = "Basic Pitch解析を利用できなかったため、通常解析へ切り替えます。";
+        result = await analyzePitch(audioBuffer, {
+          detail: detailSelect.value,
+          sensitivity: sensitivitySelect.value,
+        });
+        lastAnalysisEngineLabel = "通常解析（自動切替）";
+      }
+    } else {
+      result = await analyzePitch(audioBuffer, {
+        detail: detailSelect.value,
+        sensitivity: sensitivitySelect.value,
+      });
+      lastAnalysisEngineLabel = "通常解析";
+    }
 
     frames = result.frames;
     segments = result.segments;
@@ -111,7 +145,7 @@ analyzeButton.addEventListener("click", async () => {
       return;
     }
 
-    statusEl.textContent = "解析が完了しました。スマホでは下の「音の流れ」も確認できます。";
+    statusEl.textContent = `${lastAnalysisEngineLabel}が完了しました。スマホでは下の「音の流れ」も確認できます。`;
     if (synthExportStatus) synthExportStatus.textContent = "解析されたドレミ音をWAV保存できます。";
     updateSummary(result);
     renderSegmentList();
@@ -901,6 +935,7 @@ function resetResult() {
   stopSynthPlayback({ silent: true });
   frames = [];
   segments = [];
+  lastAnalysisEngineLabel = "";
   drawState = null;
   selectedSegment = null;
   resetPitchDragState();
@@ -934,6 +969,225 @@ function clearCanvas() {
   canvas.height = safeHeight * ratio;
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   ctx.clearRect(0, 0, safeWidth, safeHeight);
+}
+
+async function getBasicPitchInstance() {
+  if (basicPitchInstance) return basicPitchInstance;
+
+  if (!basicPitchModelPromise) {
+    basicPitchModelPromise = Promise.resolve().then(() => {
+      basicPitchInstance = new BasicPitch(BASIC_PITCH_MODEL_URL);
+      return basicPitchInstance;
+    });
+  }
+
+  return basicPitchModelPromise;
+}
+
+async function analyzeWithBasicPitch(buffer) {
+  const instance = await getBasicPitchInstance();
+  const mono = toMono(buffer);
+  const resampled = resampleLinear(mono, buffer.sampleRate, BASIC_PITCH_SAMPLE_RATE);
+
+  const modelFrames = [];
+  const modelOnsets = [];
+  const modelContours = [];
+
+  await instance.evaluateModel(
+    resampled,
+    (frameChunk, onsetChunk, contourChunk) => {
+      modelFrames.push(...frameChunk);
+      modelOnsets.push(...onsetChunk);
+      modelContours.push(...contourChunk);
+    },
+    (progress) => {
+      const percent = Math.max(0, Math.min(100, Math.round(progress * 100)));
+      statusEl.textContent = `Basic Pitchで解析中... ${percent}%`;
+    },
+  );
+
+  if (!modelFrames.length || !modelOnsets.length) {
+    throw new Error("Basic Pitch returned no model output.");
+  }
+
+  const config = getBasicPitchThresholds();
+  const rawNotes = outputToNotesPoly(
+    modelFrames,
+    modelOnsets,
+    config.onsetThreshold,
+    config.frameThreshold,
+    config.minNoteLengthFrames,
+    true,
+    1000,
+    75,
+    true,
+    config.energyTolerance,
+  );
+
+  const notesWithBends = addPitchBendsToNoteEvents(modelContours, rawNotes);
+  const timedNotes = noteFramesToTime(notesWithBends);
+  const basicFrames = basicPitchNotesToMonophonicFrames(timedNotes, buffer.duration);
+  const basicSegments = framesToSegments(basicFrames, config.minSegmentSeconds);
+
+  return {
+    frames: basicFrames,
+    segments: basicSegments,
+    duration: buffer.duration,
+    engine: "basic-pitch",
+  };
+}
+
+function getBasicPitchThresholds() {
+  const preset = analysisPreset?.value || "auto";
+
+  const presets = {
+    auto: {
+      onsetThreshold: 0.25,
+      frameThreshold: 0.25,
+      minNoteLengthFrames: 5,
+      energyTolerance: 11,
+      minSegmentSeconds: 0.08,
+    },
+    smallVoice: {
+      onsetThreshold: 0.18,
+      frameThreshold: 0.18,
+      minNoteLengthFrames: 4,
+      energyTolerance: 12,
+      minSegmentSeconds: 0.07,
+    },
+    noisy: {
+      onsetThreshold: 0.34,
+      frameThreshold: 0.32,
+      minNoteLengthFrames: 6,
+      energyTolerance: 9,
+      minSegmentSeconds: 0.10,
+    },
+    smooth: {
+      onsetThreshold: 0.28,
+      frameThreshold: 0.30,
+      minNoteLengthFrames: 8,
+      energyTolerance: 10,
+      minSegmentSeconds: 0.12,
+    },
+  };
+
+  return presets[preset] || presets.auto;
+}
+
+function basicPitchNotesToMonophonicFrames(noteEvents, duration) {
+  const hopSeconds = 0.05;
+  const notes = noteEvents
+    .map((note) => ({
+      start: Number(note.startTimeSeconds),
+      end: Number(note.startTimeSeconds) + Number(note.durationSeconds),
+      midi: Math.round(Number(note.pitchMidi)),
+      amplitude: Number(note.amplitude || 0),
+      pitchBends: Array.isArray(note.pitchBends) ? note.pitchBends : [],
+    }))
+    .filter((note) =>
+      Number.isFinite(note.start) &&
+      Number.isFinite(note.end) &&
+      Number.isFinite(note.midi) &&
+      note.end > note.start &&
+      note.midi >= 24 &&
+      note.midi <= 96
+    );
+
+  const output = [];
+  let previousMidi = null;
+
+  for (let time = 0; time < duration; time += hopSeconds) {
+    const center = time + hopSeconds / 2;
+    const active = notes.filter((note) => note.start <= center && note.end > center);
+
+    if (!active.length) {
+      output.push(createBasicPitchFrame(time, hopSeconds, null, 0));
+      previousMidi = null;
+      continue;
+    }
+
+    active.sort((a, b) => {
+      const aContinuity = previousMidi === null ? 0 : Math.abs(a.midi - previousMidi) * 0.018;
+      const bContinuity = previousMidi === null ? 0 : Math.abs(b.midi - previousMidi) * 0.018;
+      return (b.amplitude - bContinuity) - (a.amplitude - aContinuity);
+    });
+
+    const selected = active[0];
+    const bend = getAveragePitchBend(selected.pitchBends);
+    const midi = clampMidi(selected.midi + bend);
+    output.push(createBasicPitchFrame(time, hopSeconds, midi, selected.amplitude));
+    previousMidi = midi;
+  }
+
+  return smoothBasicPitchFrames(output);
+}
+
+function createBasicPitchFrame(time, duration, midi, confidence) {
+  if (!Number.isFinite(midi)) {
+    return {
+      time,
+      duration,
+      freq: null,
+      midi: null,
+      noteName: null,
+      confidence: 0,
+    };
+  }
+
+  return {
+    time,
+    duration,
+    freq: midiToFrequency(midi),
+    midi,
+    noteName: midiToNoteName(midi),
+    confidence: Math.max(0, Math.min(1, confidence || 0)),
+  };
+}
+
+function getAveragePitchBend(pitchBends) {
+  if (!pitchBends?.length) return 0;
+
+  const sorted = pitchBends
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  if (!sorted.length) return 0;
+
+  const median = sorted[Math.floor(sorted.length / 2)];
+  // Basic Pitchのbendは1/3半音単位。バー表示は半音単位なので丸めます。
+  return Math.round(median / 3);
+}
+
+function smoothBasicPitchFrames(inputFrames) {
+  const output = inputFrames.map((frame) => ({ ...frame }));
+
+  for (let i = 1; i < output.length - 1; i++) {
+    const prev = output[i - 1];
+    const current = output[i];
+    const next = output[i + 1];
+
+    if (!current.midi && prev.midi && next.midi && prev.midi === next.midi) {
+      output[i] = {
+        ...current,
+        midi: prev.midi,
+        noteName: midiToNoteName(prev.midi),
+        freq: midiToFrequency(prev.midi),
+        confidence: Math.min(prev.confidence, next.confidence) * 0.9,
+      };
+      continue;
+    }
+
+    if (current.midi && prev.midi && next.midi) {
+      const values = [prev.midi, current.midi, next.midi].sort((a, b) => a - b);
+      const median = values[1];
+      if (Math.abs(current.midi - median) >= 2) {
+        output[i].midi = median;
+        output[i].noteName = midiToNoteName(median);
+        output[i].freq = midiToFrequency(median);
+      }
+    }
+  }
+
+  return output;
 }
 
 async function analyzePitch(buffer, options) {
@@ -1819,7 +2073,12 @@ function updateSummary(result) {
     ? "音名はドレミだけで表示しています。詳しく見たい時は「詳しめ表示」に切り替えられます。"
     : "音名はオクターブ番号つきで表示しています。";
 
+  const engineNote = lastAnalysisEngineLabel
+    ? `解析方式：<strong>${lastAnalysisEngineLabel}</strong><br>`
+    : "";
+
   summaryEl.innerHTML = `
+    ${engineNote}
     <strong>${targetSegments.length}個</strong>の音程バーを検出しました。
     音域は <strong>${minNote}</strong> 〜 <strong>${maxNote}</strong> あたりです。
     使われている音：${usedNotes.join("、")}<br>

@@ -861,3 +861,43 @@ body {
     font-size: 12px;
   }
 }
+
+
+/* v017: Basic Pitch analysis selector */
+.engine-setting {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
+  gap: 12px;
+  margin: 16px 0 10px;
+  padding: 14px;
+  border: 1px solid #e5c69f;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fff7ec, #fffdf8);
+}
+
+.engine-setting label {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.engine-description {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.engine-description strong {
+  color: var(--accent-dark);
+}
+
+@media (max-width: 760px) {
+  .engine-setting {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
