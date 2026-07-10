@@ -3,27 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ドレミバー v019</title>
-  <script type="module" crossorigin src="./assets/index-OFysqjWe.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DGqtrQD2.css">
-
-  <script>
-    window.addEventListener("error", function (event) {
-      var status = document.getElementById("status");
-      if (status) {
-        status.textContent = "アプリの読み込み中にエラーが発生しました。ページを再読み込みしてください。";
-      }
-      console.error("Doremi Bar startup error:", event.error || event.message);
-    });
-
-    window.addEventListener("unhandledrejection", function (event) {
-      var status = document.getElementById("status");
-      if (status && status.textContent.indexOf("解析") === -1) {
-        status.textContent = "アプリの初期化に失敗しました。ページを再読み込みしてください。";
-      }
-      console.error("Doremi Bar unhandled rejection:", event.reason);
-    });
-  </script>
+  <title>ドレミバー v018</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="app">
@@ -33,7 +14,7 @@
         <h1>ドレミバー</h1>
         <p class="lead">
           鼻歌や歌声の音程を、カラオケの音程バーのように見える化します。
-          v019では、公開時にJavaScript全体が停止する問題を修正しました。ファイル読取・録音・Basic Pitch解析をビルド済み静的ファイルで動作させます。
+          v018では、音声ファイルを選択できない問題を修正しました。Basic Pitch高精度解析と従来解析の両方を利用できます。
         </p>
       </div>
     </header>
@@ -302,5 +283,6 @@
     </main>
   </div>
 
+  <script type="module" src="/app.js"></script>
 </body>
 </html>
