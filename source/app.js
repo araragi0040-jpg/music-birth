@@ -1048,7 +1048,7 @@ async function analyzeWithBasicPitch(buffer) {
     config.frameThreshold,
     config.minNoteLengthFrames,
     true,
-    1000,
+    null,
     75,
     true,
     config.energyTolerance,
@@ -1075,29 +1075,29 @@ function getBasicPitchThresholds() {
       onsetThreshold: 0.25,
       frameThreshold: 0.25,
       minNoteLengthFrames: 5,
-      energyTolerance: 11,
-      minSegmentSeconds: 0.08,
+      energyTolerance: 7,
+      minSegmentSeconds: 0.05,
     },
     smallVoice: {
       onsetThreshold: 0.18,
       frameThreshold: 0.18,
       minNoteLengthFrames: 4,
-      energyTolerance: 12,
-      minSegmentSeconds: 0.07,
+      energyTolerance: 8,
+      minSegmentSeconds: 0.05,
     },
     noisy: {
       onsetThreshold: 0.34,
       frameThreshold: 0.32,
       minNoteLengthFrames: 6,
-      energyTolerance: 9,
-      minSegmentSeconds: 0.10,
+      energyTolerance: 6,
+      minSegmentSeconds: 0.05,
     },
     smooth: {
       onsetThreshold: 0.28,
       frameThreshold: 0.30,
       minNoteLengthFrames: 8,
-      energyTolerance: 10,
-      minSegmentSeconds: 0.12,
+      energyTolerance: 7,
+      minSegmentSeconds: 0.05,
     },
   };
 
@@ -1137,9 +1137,11 @@ function basicPitchNotesToMonophonicFrames(noteEvents, duration) {
     }
 
     active.sort((a, b) => {
-      const aContinuity = previousMidi === null ? 0 : Math.abs(a.midi - previousMidi) * 0.018;
-      const bContinuity = previousMidi === null ? 0 : Math.abs(b.midi - previousMidi) * 0.018;
-      return (b.amplitude - bContinuity) - (a.amplitude - aContinuity);
+      const amplitudeDifference = b.amplitude - a.amplitude;
+      if (Math.abs(amplitudeDifference) > 0.001) {
+        return amplitudeDifference;
+      }
+      return b.start - a.start;
     });
 
     const selected = active[0];
