@@ -1,6 +1,6 @@
 {
   "name": "doremi-bar",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "description": "ドレミバー UIスマホ最適化版。既存機能と内容を維持しつつ、モバイル向けに整理。",
   "type": "module",
   "private": true,

@@ -1524,8 +1524,8 @@ function getDisplayMidiRange(targetSegments) {
     return { minMidi: 48, maxMidi: 72 };
   }
 
-  // 解析ミスによる極端な外れ値があると、スマホで縦長になりすぎるため、
-  // 表示範囲だけは中央寄りの音域を優先します。解析データ自体は消しません。
+  // 検出済みの最高音は必ず表示範囲へ含めます。
+  // 音域が広すぎる場合は、上側を削らず、低音側の外れ値だけを調整します。
   const rawMin = midiValues[0];
   const rawMax = midiValues[midiValues.length - 1];
   let minMidi = rawMin;
@@ -1533,17 +1533,14 @@ function getDisplayMidiRange(targetSegments) {
 
   if (rawMax - rawMin > 28 && midiValues.length >= 8) {
     minMidi = percentileValue(midiValues, 0.08);
-    maxMidi = percentileValue(midiValues, 0.92);
   }
 
   minMidi = Math.max(24, Math.floor(minMidi) - 2);
-  maxMidi = Math.min(96, Math.ceil(maxMidi) + 2);
+  maxMidi = Math.min(96, Math.ceil(rawMax) + 2);
 
-  // それでも広すぎる場合は、中央値を中心に最大約2オクターブ半に収めます。
+  // 約2オクターブ半を超える場合も、最高音を基準に低音側だけを縮めます。
   if (maxMidi - minMidi > 30) {
-    const center = percentileValue(midiValues, 0.5);
-    minMidi = Math.max(24, Math.floor(center - 15));
-    maxMidi = Math.min(96, Math.ceil(center + 15));
+    minMidi = Math.max(24, maxMidi - 30);
   }
 
   if (maxMidi <= minMidi) {
