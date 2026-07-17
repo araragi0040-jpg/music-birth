@@ -1108,3 +1108,383 @@ button.primary {
     gap: 4px;
   }
 }
+
+
+/* v021: mobile-first / simpler visual layout */
+:root {
+  --shadow: 0 6px 18px rgba(108, 67, 25, 0.08);
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(255, 204, 150, 0.22), transparent 28%),
+    linear-gradient(180deg, #fff8ef 0%, #fffaf5 44%, #fff 100%);
+}
+
+.app {
+  width: min(100vw - 16px, 980px);
+  margin: 0 auto;
+  padding: 10px 0 28px;
+}
+
+.hero {
+  padding: 20px 18px;
+  margin-bottom: 14px;
+  border-radius: 20px;
+  background: #fffaf4;
+  box-shadow: 0 4px 14px rgba(108, 67, 25, 0.06);
+}
+
+.eyebrow {
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+h1 {
+  font-size: clamp(30px, 9vw, 46px);
+  line-height: 1.06;
+}
+
+.lead {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.hero-meta {
+  margin-top: 12px;
+  gap: 6px;
+}
+
+.hero-chip {
+  min-height: 30px;
+  padding: 6px 10px;
+  font-size: 11px;
+  background: #fff;
+  border-color: #ebd6bf;
+}
+
+main {
+  gap: 14px;
+}
+
+.panel {
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(255, 253, 248, 0.98);
+  box-shadow: 0 4px 14px rgba(108, 67, 25, 0.06);
+}
+
+.section-title {
+  margin-bottom: 14px;
+}
+
+.section-title h2,
+.notes-panel h2 {
+  font-size: 19px;
+}
+
+.step {
+  width: 28px;
+  height: 28px;
+  font-size: 13px;
+}
+
+.input-card,
+.engine-setting,
+.simple-setting,
+.export-panel,
+.segment-flow,
+.sound-setting,
+.edit-guide,
+.summary,
+.selected-info,
+.compact-guide,
+.action-card {
+  border-radius: 16px;
+  box-shadow: none;
+}
+
+.input-card {
+  padding: 14px;
+  background: #fffdf9;
+}
+
+.input-card h3 {
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+
+.input-card p,
+.engine-description,
+.export-panel p,
+.guide,
+.summary,
+.edit-guide,
+.selected-info,
+.segment-flow-head p,
+.export-status,
+.simple-setting p,
+.small-note {
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.file-picker {
+  min-height: 76px;
+}
+
+.file-box {
+  min-height: 76px;
+  padding: 14px;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.file-box small {
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.record-controls,
+.play-tools,
+.export-tools {
+  gap: 8px;
+}
+
+.record-state {
+  margin-top: 10px;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.engine-setting,
+.simple-setting {
+  margin-top: 12px;
+  padding: 12px;
+  background: #fffaf4;
+}
+
+.subsection-heading {
+  margin: 12px 0 6px;
+  font-size: 12px;
+}
+
+.subsection-heading.muted {
+  margin-top: 8px;
+}
+
+.advanced-settings {
+  margin: 8px 0 14px;
+  border-radius: 14px;
+  box-shadow: none;
+}
+
+.advanced-settings summary {
+  padding: 11px 12px;
+  font-size: 14px;
+  background: #fffaf4;
+}
+
+.setting-hints,
+.settings {
+  padding-left: 12px;
+  padding-right: 12px;
+  padding-bottom: 12px;
+}
+
+select {
+  min-height: 44px;
+  border-radius: 11px;
+  padding: 10px 11px;
+  font-size: 14px;
+}
+
+button {
+  min-height: 46px;
+  padding: 12px 14px;
+  border-radius: 13px;
+  font-size: 14px;
+}
+
+button.primary {
+  font-size: 15px;
+}
+
+.action-card {
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.action-card .status {
+  margin-top: 8px;
+}
+
+audio {
+  margin-top: 10px;
+}
+
+.compact-guide {
+  padding: 11px 12px;
+  margin-bottom: 10px;
+}
+
+.summary {
+  margin-bottom: 10px;
+  padding: 11px 12px;
+}
+
+.edit-guide {
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.canvas-wrap {
+  border-radius: 14px;
+}
+
+.sound-setting {
+  margin-top: 10px;
+  padding: 12px;
+}
+
+button.save-image {
+  margin-top: 10px;
+}
+
+.export-panel {
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.synth-export-panel {
+  margin-top: 10px;
+}
+
+.segment-flow {
+  margin-top: 10px;
+  padding: 12px;
+}
+
+.segment-chip {
+  min-height: 32px;
+  padding: 6px 9px;
+  font-size: 12px;
+}
+
+.segment-chip strong {
+  font-size: 14px;
+}
+
+.selected-info {
+  margin-top: 10px;
+  padding: 10px 12px;
+}
+
+.notes-panel ul {
+  margin-top: 6px;
+  gap: 5px;
+  line-height: 1.65;
+}
+
+.notes-panel li {
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .app {
+    width: calc(100vw - 14px);
+    max-width: calc(100vw - 14px);
+    padding-top: 8px;
+    padding-bottom: 20px;
+  }
+
+  .hero,
+  .panel {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .input-grid,
+  .settings,
+  .record-controls,
+  .simple-setting,
+  .play-tools,
+  .export-tools,
+  .sound-setting,
+  .engine-setting {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .hero-meta {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero-chip {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .section-title {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .input-card,
+  .engine-setting,
+  .simple-setting,
+  .export-panel,
+  .segment-flow,
+  .sound-setting,
+  .edit-guide,
+  .summary,
+  .selected-info,
+  .compact-guide,
+  .action-card {
+    padding: 11px;
+    border-radius: 14px;
+  }
+
+  .file-picker,
+  .file-box {
+    min-height: 72px;
+  }
+
+  .record-state {
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .segment-list {
+    max-height: 190px;
+  }
+
+  .notes-panel ul {
+    padding-left: 18px;
+  }
+}
+
+@media (max-width: 420px) {
+  .lead,
+  .input-card p,
+  .engine-description,
+  .export-panel p,
+  .guide,
+  .summary,
+  .edit-guide,
+  .selected-info,
+  .segment-flow-head p,
+  .export-status,
+  .simple-setting p,
+  .small-note,
+  .notes-panel li {
+    font-size: 12px;
+  }
+
+  button,
+  select {
+    font-size: 13px;
+  }
+}
