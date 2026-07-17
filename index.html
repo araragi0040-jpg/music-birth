@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ドレミバー v019</title>
+  <title>ドレミバー v020</title>
   <script type="module" crossorigin src="./assets/index-OFysqjWe.js"></script>
   <link rel="stylesheet" crossorigin href="./assets/index-DGqtrQD2.css">
 
@@ -33,8 +33,13 @@
         <h1>ドレミバー</h1>
         <p class="lead">
           鼻歌や歌声の音程を、カラオケの音程バーのように見える化します。
-          v019では、公開時にJavaScript全体が停止する問題を修正しました。ファイル読取・録音・Basic Pitch解析をビルド済み静的ファイルで動作させます。
+          高さの確認・微調整・保存まで、1画面で進められます。
         </p>
+        <div class="hero-meta">
+          <span class="hero-chip">おすすめ：高精度（Basic Pitch）</span>
+          <span class="hero-chip">単音メロディ向け</span>
+          <span class="hero-chip">5〜15秒の短め音源が見やすい</span>
+        </div>
       </div>
     </header>
 
@@ -88,6 +93,7 @@
         </div>
 
 
+        <div class="subsection-heading">おすすめ設定</div>
         <div class="engine-setting">
           <label>
             解析方式
@@ -134,6 +140,7 @@
           </p>
         </div>
 
+        <div class="subsection-heading muted">必要なときだけ詳細調整</div>
         <details class="advanced-settings">
           <summary>うまく出ない時だけ細かく調整</summary>
 
@@ -173,11 +180,11 @@
           </div>
         </details>
 
-        <button id="analyzeButton" class="primary" disabled>解析する</button>
-
-        <div id="status" class="status">音源を選択するか、録音してください。</div>
-
-        <audio id="audio" controls></audio>
+        <div class="action-card">
+          <button id="analyzeButton" class="primary" disabled>解析する</button>
+          <div id="status" class="status">音源を選択するか、録音してください。</div>
+          <audio id="audio" controls></audio>
+        </div>
 
         <div class="export-panel">
           <h3>録音音源の書き出し</h3>
@@ -200,11 +207,10 @@
           <h2>音程バーを見る</h2>
         </div>
 
-        <div class="guide">
-          <p><strong>左のドレミ</strong>が音の高さです。右に進むほど時間が進みます。</p>
-          <p>バーをタップすると、その音の位置を選択できます。</p>
-          <p><strong>バーを上下にドラッグ</strong>すると、長さを変えずに音の高さだけを編集できます。</p>
-          <p>スマホで横に長い場合は、ページ全体ではなく、音程バー枠の中だけが横スクロールします。</p>
+        <div class="guide compact-guide">
+          <p><strong>左のドレミ</strong>が音の高さ、右方向が時間です。</p>
+          <p>タップで選択、<strong>上下ドラッグ</strong>で高さだけ修正できます。</p>
+          <p>スマホでは、音程バー枠の中だけ横スクロールします。</p>
         </div>
 
         <div id="summary" class="summary">
@@ -213,8 +219,8 @@
 
         <div class="edit-guide">
           <strong>高さを直す：</strong>
-          オレンジ色のバーを押したまま、上または下へ動かしてください。
-          編集後の高さは、ドレミ音再生とWAV保存にも反映されます。
+          オレンジ色のバーを押したまま上または下へ動かします。
+          修正内容は再生・画像保存・ドレミ音WAV保存に反映されます。
         </div>
 
         <div class="canvas-wrap">
@@ -279,24 +285,13 @@
       </section>
 
       <section class="panel notes-panel">
-        <h2>使い方の目安</h2>
+        <h2>ポイント</h2>
         <ul>
-          <li>鼻歌・歌声・単音メロディ向けです。</li>
-          <li>録音は5〜15秒くらいの短めから試すと確認しやすいです。</li>
-          <li>解析方式は「高精度（Basic Pitch）」がおすすめです。初回のみモデル読み込みに時間がかかります。</li>
-          <li>高精度解析が使えない場合は、自動的に通常解析へ切り替わります。</li>
-          <li>解析モードは、基本的に「おまかせ」のままで大丈夫です。</li>
-          <li>音名表示は、最初は「やさしい（ドレミだけ）」がおすすめです。</li>
-          <li>結果は画像として保存できます。練習メモや共有用に使えます。</li>
-          <li>解析したバーは、ドレミ音として再生できます。</li>
-          <li>音程バーは、基本は横スクロールで見るのがおすすめです。</li>
-          <li>全体をざっくり見たい時は「音程バー表示：全体表示」に切り替えられます。</li>
-          <li>スマホでは、音程バーの下にある「音の流れ」も見ると確認しやすいです。</li>
-          <li>録音した音源は、そのまま保存したりWAVで保存したりできます。</li>
-          <li>解析されたドレミ音も、キーボード風のWAVとして保存できます。</li>
-          <li>伴奏入り音源や複数の音が同時に鳴る音源は、正確に読めないことがあります。</li>
-          <li>歌声は自然に揺れるため、細かいズレは気にしすぎなくて大丈夫です。</li>
-          <li>「固定ド」表示なので、C=ド、D=レ、E=ミとして表示します。</li>
+          <li>単音の鼻歌・歌声・メロディ確認向けです。</li>
+          <li>まずは「高精度（Basic Pitch）」＋「おまかせ」で試すのがおすすめです。</li>
+          <li>細かいズレは、必要な部分だけバーを上下ドラッグして直せます。</li>
+          <li>作曲アプリへ渡すなら「録音音源をWAV保存」または「ドレミ音をWAV保存」が便利です。</li>
+          <li>伴奏入り音源や和音は、正確に読めないことがあります。</li>
         </ul>
       </section>
     </main>

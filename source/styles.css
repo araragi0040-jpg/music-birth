@@ -932,3 +932,179 @@ body {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+
+/* v020: usability refresh */
+.hero {
+  padding: 28px 30px;
+}
+
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.hero-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid #f0d5b6;
+  background: #fffaf4;
+  color: var(--accent-dark);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.subsection-heading {
+  margin: 14px 0 8px;
+  color: var(--accent-dark);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.subsection-heading.muted {
+  margin-top: 10px;
+  color: #8a7563;
+}
+
+.engine-setting,
+.simple-setting,
+.advanced-settings,
+.export-panel,
+.segment-flow,
+.sound-setting,
+.edit-guide,
+.summary,
+.selected-info {
+  box-shadow: 0 4px 14px rgba(108, 67, 25, 0.04);
+}
+
+.engine-setting {
+  grid-template-columns: minmax(230px, 0.72fr) minmax(0, 1.28fr);
+  align-items: start;
+}
+
+.engine-description,
+.simple-setting p,
+.export-panel p,
+.export-status,
+.guide,
+.summary,
+.edit-guide,
+.selected-info,
+.segment-flow-head p {
+  line-height: 1.75;
+}
+
+.simple-setting {
+  padding: 16px;
+  gap: 14px;
+}
+
+.simple-setting label,
+.settings label,
+.engine-setting label,
+.sound-setting label {
+  font-size: 12px;
+  text-transform: none;
+}
+
+.advanced-settings summary {
+  background: #fff8f1;
+}
+
+.action-card {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #f0dbc4;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fff9f2, #fffdf9);
+}
+
+.action-card .status {
+  margin-top: 10px;
+}
+
+.action-card audio {
+  margin-top: 12px;
+}
+
+.compact-guide {
+  padding: 12px 14px;
+  border: 1px solid #f0dbc4;
+  border-radius: 16px;
+  background: #fffaf4;
+}
+
+.compact-guide p + p {
+  margin-top: 2px;
+}
+
+.result-panel .summary {
+  margin-top: 12px;
+}
+
+.notes-panel h2 {
+  margin-bottom: 6px;
+}
+
+.notes-panel ul {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.notes-panel li {
+  padding-left: 2px;
+}
+
+.export-tools button,
+.play-tools button,
+.record-controls button {
+  min-height: 48px;
+}
+
+button.primary {
+  font-size: 16px;
+}
+
+@media (max-width: 760px) {
+  .hero {
+    padding: 22px 18px;
+  }
+
+  .hero-meta {
+    gap: 7px;
+  }
+
+  .hero-chip {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .subsection-heading {
+    margin-top: 12px;
+  }
+
+  .action-card,
+  .compact-guide,
+  .engine-setting,
+  .simple-setting,
+  .export-panel,
+  .segment-flow,
+  .sound-setting,
+  .edit-guide {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .notes-panel ul {
+    gap: 4px;
+  }
+}
