@@ -62,6 +62,8 @@ let pitchDragState = {
 };
 
 let synthNodes = [];
+let synthAudioContext = null;
+let synthBufferSource = null;
 let synthEndTimer = null;
 let synthStartAudioTime = null;
 let synthDuration = 0;
@@ -1779,8 +1781,8 @@ function drawPlayhead(s) {
 }
 
 function getDisplayPlayheadTime() {
-  if (isSynthPlaying && synthStartAudioTime !== null && audioContext) {
-    return Math.max(0, Math.min(synthDuration, audioContext.currentTime - synthStartAudioTime));
+  if (isSynthPlaying && synthStartAudioTime !== null && synthAudioContext) {
+    return Math.max(0, Math.min(synthDuration, synthAudioContext.currentTime - synthStartAudioTime));
   }
 
   if (audioEl.src && (!audioEl.paused || audioEl.currentTime > 0)) {
@@ -1896,8 +1898,7 @@ async function playSynthFromBars() {
   }
 
   try {
-    audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
-    await audioContext.resume();
+    const context = await ensureSynthAudioContext();
 
     if (!audioEl.paused) {
       audioEl.pause();
@@ -1905,48 +1906,144 @@ async function playSynthFromBars() {
 
     stopSynthPlayback({ silent: true });
 
-    const startAt = audioContext.currentTime + 0.08;
-    const lastEnd = Math.max(...segments.map((seg) => seg.end));
-    synthDuration = Math.max(audioBuffer?.duration || 0, lastEnd);
+    statusEl.textContent = "ドレミ音の再生データを準備中です。";
+
+    const playbackBuffer = createSynthPlaybackBuffer(context);
+    const source = context.createBufferSource();
+    const outputGain = context.createGain();
+
+    source.buffer = playbackBuffer;
+    outputGain.gain.setValueAtTime(0.96, context.currentTime);
+
+    source.connect(outputGain);
+    outputGain.connect(context.destination);
+
+    const startAt = context.currentTime + 0.06;
+
+    synthAudioContext = context;
+    synthBufferSource = source;
     synthStartAudioTime = startAt;
+    synthDuration = playbackBuffer.duration;
     isSynthPlaying = true;
-    synthNodes = [];
+    synthNodes = [source, outputGain];
 
-    const volumeMultiplier = Number(synthVolume?.value || 2.6);
-    const masterGain = audioContext.createGain();
-    const compressor = audioContext.createDynamicsCompressor();
+    source.onended = () => {
+      if (synthBufferSource !== source || !isSynthPlaying) return;
+      finishSynthPlayback();
+    };
 
-    compressor.threshold.setValueAtTime(-12, startAt);
-    compressor.knee.setValueAtTime(18, startAt);
-    compressor.ratio.setValueAtTime(7, startAt);
-    compressor.attack.setValueAtTime(0.006, startAt);
-    compressor.release.setValueAtTime(0.22, startAt);
-
-    masterGain.gain.setValueAtTime(volumeMultiplier, startAt);
-    masterGain.connect(compressor);
-    compressor.connect(audioContext.destination);
-    synthNodes.push(masterGain, compressor);
-
-    for (const seg of segments) {
-      const start = startAt + Math.max(0, seg.start);
-      const end = startAt + Math.max(seg.start + 0.05, seg.end);
-      scheduleKeyboardNote(audioContext, masterGain, seg.midi, start, end, synthTone?.value || "keyboard", synthNodes);
-    }
+    source.start(startAt);
 
     updateResultButtons();
     statusEl.textContent = "解析したバーをキーボード風のドレミ音で再生中です。";
     selectedInfo.textContent = "ドレミ音で再生中です。電子音よりも柔らかく減衰するキーボード風の音色にしています。";
     startPlayhead();
 
-    const finishAfterMs = Math.max(100, (synthDuration + 0.35) * 1000);
+    const finishAfterMs = Math.max(100, (synthDuration + 0.5) * 1000);
     synthEndTimer = setTimeout(() => {
-      finishSynthPlayback();
+      if (isSynthPlaying) finishSynthPlayback();
     }, finishAfterMs);
   } catch (error) {
     console.error(error);
     stopSynthPlayback({ silent: true });
-    statusEl.textContent = "ドレミ音の再生中にエラーが起きました。ブラウザの音声再生許可を確認してください。";
+    statusEl.textContent = "ドレミ音を再生できませんでした。画面を一度タップしてから、再度お試しください。";
   }
+}
+
+async function ensureSynthAudioContext() {
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) {
+    throw new Error("Web Audio API is not supported.");
+  }
+
+  if (
+    !synthAudioContext ||
+    synthAudioContext.state === "closed" ||
+    synthAudioContext.state === "interrupted"
+  ) {
+    synthAudioContext = new AudioCtx({ latencyHint: "interactive" });
+  }
+
+  // モバイルブラウザ向けに、ユーザー操作中に無音バッファを一度開始します。
+  const unlockBuffer = synthAudioContext.createBuffer(1, 1, synthAudioContext.sampleRate);
+  const unlockSource = synthAudioContext.createBufferSource();
+  unlockSource.buffer = unlockBuffer;
+  unlockSource.connect(synthAudioContext.destination);
+  unlockSource.start(0);
+
+  if (synthAudioContext.state !== "running") {
+    await synthAudioContext.resume();
+  }
+
+  if (synthAudioContext.state !== "running") {
+    throw new Error(`Synth AudioContext is ${synthAudioContext.state}.`);
+  }
+
+  return synthAudioContext;
+}
+
+function createSynthPlaybackBuffer(context) {
+  const lastEnd = Math.max(...segments.map((seg) => seg.end));
+  const duration = Math.max(0.5, audioBuffer?.duration || 0, lastEnd + 0.35);
+  const sampleRate = context.sampleRate;
+  const length = Math.max(1, Math.ceil(duration * sampleRate));
+  const buffer = context.createBuffer(2, length, sampleRate);
+  const left = buffer.getChannelData(0);
+  const right = buffer.getChannelData(1);
+  const tone = synthTone?.value || "keyboard";
+  const volume = Number(synthVolume?.value || 2.6);
+  const toneConfig = getManualToneConfig(tone);
+
+  for (const seg of segments) {
+    if (
+      !Number.isFinite(seg.start) ||
+      !Number.isFinite(seg.end) ||
+      !Number.isFinite(seg.midi)
+    ) {
+      continue;
+    }
+
+    const startIndex = Math.max(0, Math.floor(seg.start * sampleRate));
+    const endIndex = Math.min(
+      length,
+      Math.ceil((Math.max(seg.end, seg.start + 0.05) + toneConfig.release) * sampleRate),
+    );
+    const freq = midiToFrequency(seg.midi);
+    const noteDuration = Math.max(0.05, seg.end - seg.start);
+
+    for (let i = startIndex; i < endIndex; i++) {
+      const oscillatorTime = (i - startIndex) / sampleRate;
+      const noteTime = i / sampleRate - seg.start;
+      const envelope = keyboardEnvelope(noteTime, noteDuration, toneConfig);
+      if (envelope <= 0.00001) continue;
+
+      let sample = 0;
+      for (const partial of toneConfig.partials) {
+        sample +=
+          Math.sin(2 * Math.PI * freq * partial.ratio * oscillatorTime) *
+          partial.gain;
+      }
+
+      sample = Math.tanh(sample * envelope * toneConfig.gain * volume);
+      left[i] += sample;
+      right[i] += sample;
+    }
+  }
+
+  let peak = 0;
+  for (let i = 0; i < length; i++) {
+    peak = Math.max(peak, Math.abs(left[i]), Math.abs(right[i]));
+  }
+
+  if (peak > 0.98) {
+    const normalize = 0.98 / peak;
+    for (let i = 0; i < length; i++) {
+      left[i] *= normalize;
+      right[i] *= normalize;
+    }
+  }
+
+  return buffer;
 }
 
 function scheduleKeyboardNote(context, destination, midi, start, end, tone, nodeStore) {
@@ -2041,6 +2138,7 @@ function getToneConfig(tone) {
 }
 
 function finishSynthPlayback() {
+  synthBufferSource = null;
   clearSynthNodes();
   isSynthPlaying = false;
   synthStartAudioTime = null;
@@ -2057,6 +2155,7 @@ function finishSynthPlayback() {
 function stopSynthPlayback(options = {}) {
   const wasPlaying = isSynthPlaying;
 
+  synthBufferSource = null;
   clearSynthNodes();
   isSynthPlaying = false;
   synthStartAudioTime = null;
